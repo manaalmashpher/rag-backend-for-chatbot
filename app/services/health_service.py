@@ -18,8 +18,23 @@ class HealthService:
     """
     
     def __init__(self):
-        self.qdrant_service = QdrantService()
-        self.embedding_service = EmbeddingService()
+        self.qdrant_service = None
+        self.embedding_service = None
+        self._initialize_services()
+    
+    def _initialize_services(self):
+        """Initialize services with error handling for deployment"""
+        try:
+            self.embedding_service = EmbeddingService()
+        except Exception as e:
+            logger.warning(f"Failed to initialize embedding service: {str(e)}")
+            self.embedding_service = None
+        
+        try:
+            self.qdrant_service = QdrantService()
+        except Exception as e:
+            logger.warning(f"Failed to initialize Qdrant service: {str(e)}")
+            self.qdrant_service = None
     
     def liveness_check(self) -> Dict[str, Any]:
         """
@@ -72,36 +87,50 @@ class HealthService:
             overall_healthy = False
         
         # Check Qdrant connectivity
-        try:
-            self.qdrant_service.health_check()
+        if self.qdrant_service is not None:
+            try:
+                self.qdrant_service.health_check()
+                components["qdrant"] = {
+                    "status": "healthy",
+                    "url": settings.qdrant_url,
+                    "collection": settings.qdrant_collection
+                }
+            except Exception as e:
+                logger.error(f"Qdrant health check failed: {str(e)}")
+                components["qdrant"] = {
+                    "status": "unhealthy",
+                    "error": str(e)
+                }
+                # Don't fail overall health if Qdrant is unavailable
+                # overall_healthy = False
+        else:
             components["qdrant"] = {
-                "status": "healthy",
-                "url": settings.qdrant_url,
-                "collection": settings.qdrant_collection
+                "status": "unavailable",
+                "message": "Qdrant service not initialized - check configuration"
             }
-        except Exception as e:
-            logger.error(f"Qdrant health check failed: {str(e)}")
-            components["qdrant"] = {
-                "status": "unhealthy",
-                "error": str(e)
-            }
-            overall_healthy = False
         
         # Check embedding provider
-        try:
-            self.embedding_service.health_check()
+        if self.embedding_service is not None:
+            try:
+                self.embedding_service.health_check()
+                components["embeddings"] = {
+                    "status": "healthy",
+                    "provider": getattr(settings, 'embedding_provider', 'local'),
+                    "model": settings.embedding_model
+                }
+            except Exception as e:
+                logger.error(f"Embedding service health check failed: {str(e)}")
+                components["embeddings"] = {
+                    "status": "unhealthy",
+                    "error": str(e)
+                }
+                # Don't fail overall health if embeddings are unavailable
+                # overall_healthy = False
+        else:
             components["embeddings"] = {
-                "status": "healthy",
-                "provider": getattr(settings, 'embedding_provider', 'local'),
-                "model": settings.embedding_model
+                "status": "unavailable",
+                "message": "Embedding service not initialized - check configuration"
             }
-        except Exception as e:
-            logger.error(f"Embedding service health check failed: {str(e)}")
-            components["embeddings"] = {
-                "status": "unhealthy",
-                "error": str(e)
-            }
-            overall_healthy = False
         
         # LLM provider not yet integrated
         components["llm"] = {

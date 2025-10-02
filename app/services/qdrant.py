@@ -14,20 +14,35 @@ class QdrantService:
     """
     
     def __init__(self):
-        # Initialize Qdrant client with optional API key for cloud
-        if settings.qdrant_api_key:
-            self.client = QdrantClient(
-                url=settings.qdrant_url,
-                api_key=settings.qdrant_api_key
-            )
-        else:
-            self.client = QdrantClient(url=settings.qdrant_url)
-        
+        self.client = None
         self.collection_name = settings.qdrant_collection
-        self._ensure_collection_exists()
+        self._is_available = False
+        
+        # Initialize Qdrant client with optional API key for cloud
+        try:
+            if settings.qdrant_api_key:
+                self.client = QdrantClient(
+                    url=settings.qdrant_url,
+                    api_key=settings.qdrant_api_key
+                )
+            else:
+                self.client = QdrantClient(url=settings.qdrant_url)
+            
+            self._ensure_collection_exists()
+            self._is_available = True
+        except Exception as e:
+            # Log the error but don't fail initialization
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to initialize Qdrant client: {str(e)}")
+            self.client = None
+            self._is_available = False
     
     def _ensure_collection_exists(self):
         """Create collection if it doesn't exist"""
+        if not self._is_available or self.client is None:
+            return
+            
         try:
             collections = self.client.get_collections()
             collection_names = [col.name for col in collections.collections]
@@ -41,9 +56,15 @@ class QdrantService:
                     )
                 )
         except ConnectionError as e:
+            self._is_available = False
             raise RuntimeError(f"Failed to connect to Qdrant: {str(e)}")
         except Exception as e:
+            self._is_available = False
             raise RuntimeError(f"Failed to ensure collection exists: {str(e)}")
+    
+    def is_available(self) -> bool:
+        """Check if Qdrant service is available"""
+        return self._is_available and self.client is not None
     
     @retry_with_backoff(max_retries=3, base_delay=1.0, max_delay=10.0)
     @circuit_breaker(failure_threshold=5, timeout=60)
@@ -58,6 +79,9 @@ class QdrantService:
         Returns:
             True if successful
         """
+        if not self.is_available():
+            raise RuntimeError("Qdrant service is not available")
+            
         try:
             points = []
             for i, (vector, payload) in enumerate(zip(vectors, payloads)):
@@ -91,6 +115,9 @@ class QdrantService:
         Returns:
             List of search results with payloads
         """
+        if not self.is_available():
+            raise RuntimeError("Qdrant service is not available")
+            
         try:
             results = self.client.search(
                 collection_name=self.collection_name,
@@ -181,9 +208,13 @@ class QdrantService:
         Returns:
             True if healthy, raises exception if not
         """
+        if not self.is_available():
+            raise RuntimeError("Qdrant service is not available")
+            
         try:
             # Try to get collections to verify connection
             self.client.get_collections()
             return True
         except Exception as e:
+            self._is_available = False
             raise RuntimeError(f"Qdrant health check failed: {str(e)}")
