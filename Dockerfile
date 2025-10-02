@@ -1,17 +1,14 @@
-# Use Python 3.11 slim image for smaller size
-# Updated to fix Node.js version and dev dependencies
-FROM python:3.11-slim
+# Use Python 3.11 alpine image for much smaller size
+FROM python:3.11-alpine
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libpq-dev \
+# Install system dependencies for Alpine
+RUN apk add --no-cache \
+    build-base \
+    postgresql-dev \
     curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js 20
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y nodejs
+    nodejs \
+    npm \
+    && rm -rf /var/cache/apk/*
 
 # Set working directory
 WORKDIR /app
@@ -33,6 +30,11 @@ COPY . .
 
 # Build frontend
 RUN npm run build
+
+# Clean up to reduce image size
+RUN npm cache clean --force \
+    && rm -rf /root/.npm \
+    && rm -rf /tmp/*
 
 # Expose port
 EXPOSE 8000
