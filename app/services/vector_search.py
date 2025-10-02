@@ -46,7 +46,7 @@ class VectorSearchService:
             try:
                 query_vector = self.embeddings.generate_single_embedding(query)
                 embedding_time = time.time() - start_time
-                if embedding_time > 3:  # Reduced timeout for embedding (3 seconds)
+                if embedding_time > 10:  # Increased timeout to 10 seconds for first-time model loading
                     logger.warning(f"Embedding generation took {embedding_time:.2f}s, skipping vector search")
                     return []
                 logger.debug(f"Embedding generated in {embedding_time:.2f}s")

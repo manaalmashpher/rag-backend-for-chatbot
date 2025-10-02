@@ -46,6 +46,16 @@ async def startup_event():
         # Initialize search infrastructure
         DatabaseInitService.initialize_search_infrastructure()
         
+        # Pre-warm embedding model to avoid first-request delay
+        try:
+            from app.services.embeddings import EmbeddingService
+            embedding_service = EmbeddingService()
+            # Generate a test embedding to warm up the model
+            embedding_service.generate_single_embedding("test")
+            logging.info("Embedding model pre-warmed successfully")
+        except Exception as e:
+            logging.warning(f"Failed to pre-warm embedding model: {e}")
+        
         # Add essential performance indexes if using PostgreSQL
         if settings.database_url.startswith('postgresql://'):
             try:

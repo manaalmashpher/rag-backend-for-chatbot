@@ -6,19 +6,32 @@ from typing import List, Dict
 from app.core.config import settings
 import hashlib
 import time
+import logging
+
+logger = logging.getLogger(__name__)
 
 class EmbeddingService:
     """
     Handles embedding generation using Sentence Transformers with caching
     """
     
+    _instance = None
+    _initialized = False
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(EmbeddingService, cls).__new__(cls)
+        return cls._instance
+    
     def __init__(self):
-        self.model = settings.embedding_model
-        self.embed_dim = settings.embed_dim
-        self._embedding_cache: Dict[str, List[float]] = {}
-        self._cache_ttl = 3600  # 1 hour cache
-        self._cache_timestamps: Dict[str, float] = {}
-        self._init_sentence_transformers()
+        if not self._initialized:
+            self.model = settings.embedding_model
+            self.embed_dim = settings.embed_dim
+            self._embedding_cache: Dict[str, List[float]] = {}
+            self._cache_ttl = 3600  # 1 hour cache
+            self._cache_timestamps: Dict[str, float] = {}
+            self._init_sentence_transformers()
+            EmbeddingService._initialized = True
     
     def _init_sentence_transformers(self):
         """Initialize Sentence Transformers model"""
@@ -102,8 +115,10 @@ class EmbeddingService:
         
         # Check cache first
         if self._is_cached(cache_key):
+            logger.debug(f"Cache hit for embedding: {text[:50]}...")
             return self._embedding_cache[cache_key]
         
+        logger.debug(f"Cache miss for embedding: {text[:50]}...")
         # Generate new embedding
         embeddings = self.generate_embeddings([text])
         return embeddings[0]
