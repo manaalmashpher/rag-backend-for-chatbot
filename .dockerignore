@@ -1,0 +1,30 @@
+# VCS & OS
+.git
+**/.git
+.DS_Store
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage*
+
+# Node
+node_modules/
+dist/            
+npm-debug.log*
+yarn.lock       
+pnpm-lock.yaml   
+
+# Local env & misc
+.env
+*.env
+uploads/
+datasets/
+models/
+checkpoints/
+docs/
+ionologyBot - Sheet1.csv
