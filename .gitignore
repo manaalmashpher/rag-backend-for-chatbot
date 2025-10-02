@@ -54,3 +54,6 @@ htmlcov/
 
 # BMAD framework/tooling
 .bmad-core/
+
+#original requirements.txt
+requirements-og.txt
