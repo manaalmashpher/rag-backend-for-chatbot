@@ -34,15 +34,11 @@ class DatabaseInitService:
             """
             db.execute(text(create_index_query))
             
-            # Create additional indexes for performance
-            performance_indexes = [
-                "CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id)",
-                "CREATE INDEX IF NOT EXISTS idx_chunks_method ON chunks(method)",
-                "CREATE INDEX IF NOT EXISTS idx_documents_title ON documents(title)",
-            ]
-            
-            for index_query in performance_indexes:
-                db.execute(text(index_query))
+            # Create hash index for batch fetching chunk text
+            hash_index_query = """
+            CREATE INDEX IF NOT EXISTS idx_chunks_hash ON chunks(hash)
+            """
+            db.execute(text(hash_index_query))
             
             db.commit()
             logger.info("PostgreSQL full-text search indexes created successfully")

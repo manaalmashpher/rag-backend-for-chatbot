@@ -39,15 +39,6 @@ class LexicalIndexService:
             """
             db.execute(text(create_index_query))
             
-            # Create additional indexes for performance
-            performance_indexes = [
-                "CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON chunks(doc_id)",
-                "CREATE INDEX IF NOT EXISTS idx_chunks_method ON chunks(method)",
-            ]
-            
-            for index_query in performance_indexes:
-                db.execute(text(index_query))
-            
             db.commit()
             logger.info("PostgreSQL full-text search indexes created successfully")
             return True
