@@ -1,5 +1,5 @@
-# Use Python 3.11 slim image for smaller size
-FROM python:3.11-slim as builder
+# Use Python 3.11 slim image
+FROM python:3.11-slim
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -16,46 +16,19 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching (builder stage only)
+# Copy requirements and install Python dependencies
 COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
-
-# Copy package files
-COPY package*.json ./
-
-# Install Node.js dependencies (including dev dependencies for build)
-RUN npm install
+# Copy package files and install Node.js dependencies
+COPY package*.json .
+RUN npm ci
 
 # Copy source code
 COPY . .
 
 # Build frontend
 RUN npm run build
-
-# Clean up to reduce image size
-RUN npm cache clean --force \
-    && rm -rf /root/.npm \
-    && rm -rf /tmp/*
-
-# Final runtime stage
-FROM python:3.11-slim
-
-# Install only runtime dependencies
-RUN apt-get update && apt-get install -y \
-    libpq5 \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /app
-
-# Copy Python packages from builder stage
-COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
-
-# Copy the built application
-COPY --from=builder /app /app
 
 # Expose port
 EXPOSE 8000
