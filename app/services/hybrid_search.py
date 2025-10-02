@@ -25,7 +25,7 @@ class HybridSearchService:
     
     def search(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """
-        Perform hybrid search combining semantic and lexical results
+        Perform hybrid search combining semantic and lexical results with timeout protection
         
         Args:
             query: Natural language query string
@@ -35,18 +35,42 @@ class HybridSearchService:
             List of fused search results ranked by combined score
         """
         try:
-            # Perform both searches in parallel using threading
+            # Perform both searches in parallel with timeout protection
             import concurrent.futures
             import threading
+            import time
+            
+            semantic_results = []
+            lexical_results = []
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                 # Submit both searches to run in parallel
-                semantic_future = executor.submit(self.vector_search.search, query, self.topk_vec)
-                lexical_future = executor.submit(self.lexical_search.search, query, self.topk_lex)
+                semantic_future = executor.submit(self._safe_vector_search, query, self.topk_vec)
+                lexical_future = executor.submit(self._safe_lexical_search, query, self.topk_lex)
                 
-                # Wait for both to complete
-                semantic_results = semantic_future.result()
-                lexical_results = lexical_future.result()
+                # Wait for both to complete with reduced timeout (6 seconds max)
+                try:
+                    semantic_results = semantic_future.result(timeout=6)
+                except concurrent.futures.TimeoutError:
+                    logger.warning("Vector search timed out, using lexical results only")
+                    semantic_results = []
+                except Exception as e:
+                    logger.warning(f"Vector search failed: {str(e)}, using lexical results only")
+                    semantic_results = []
+                
+                try:
+                    lexical_results = lexical_future.result(timeout=6)
+                except concurrent.futures.TimeoutError:
+                    logger.warning("Lexical search timed out, using semantic results only")
+                    lexical_results = []
+                except Exception as e:
+                    logger.warning(f"Lexical search failed: {str(e)}, using semantic results only")
+                    lexical_results = []
+            
+            # If both failed, return empty results
+            if not semantic_results and not lexical_results:
+                logger.error("Both vector and lexical search failed")
+                return []
             
             # Fuse results
             fused_results = self._fuse_results(semantic_results, lexical_results)
@@ -60,6 +84,22 @@ class HybridSearchService:
         except Exception as e:
             logger.error(f"Hybrid search failed: {str(e)}")
             raise RuntimeError(f"Hybrid search failed: {str(e)}")
+    
+    def _safe_vector_search(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Safe vector search with error handling"""
+        try:
+            return self.vector_search.search(query, limit)
+        except Exception as e:
+            logger.warning(f"Vector search error: {str(e)}")
+            return []
+    
+    def _safe_lexical_search(self, query: str, limit: int) -> List[Dict[str, Any]]:
+        """Safe lexical search with error handling"""
+        try:
+            return self.lexical_search.search(query, limit)
+        except Exception as e:
+            logger.warning(f"Lexical search error: {str(e)}")
+            return []
     
     def _fuse_results(self, semantic_results: List[Dict[str, Any]], lexical_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """

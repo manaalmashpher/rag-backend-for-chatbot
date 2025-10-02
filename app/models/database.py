@@ -2,7 +2,7 @@
 Database models for the application
 """
 
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, JSON, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -40,16 +40,22 @@ class Chunk(Base):
     __tablename__ = "chunks"
     
     id = Column(Integer, primary_key=True, index=True)
-    doc_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
-    method = Column(Integer, nullable=False)  # Chunking method used
+    doc_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
+    method = Column(Integer, nullable=False, index=True)  # Chunking method used
     page_from = Column(Integer, nullable=True)
     page_to = Column(Integer, nullable=True)
-    hash = Column(String(64), nullable=False)
+    hash = Column(String(64), nullable=False, index=True)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
     document = relationship("Document", back_populates="chunks")
+    
+    # Additional indexes for performance
+    __table_args__ = (
+        Index('idx_chunk_doc_method', 'doc_id', 'method'),
+        Index('idx_chunk_hash_text', 'hash', 'text'),
+    )
 
 class SearchLog(Base):
     __tablename__ = "search_logs"

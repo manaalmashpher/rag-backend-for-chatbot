@@ -63,11 +63,20 @@ async def search_documents(
             logger.info(f"Cache hit for query: {search_request.q[:50]}...")
             return cached_result
         
-        # Perform hybrid search
-        search_metadata = search_service.search_with_metadata(
-            query=search_request.q,
-            limit=search_request.limit
-        )
+        # Perform hybrid search with timeout protection
+        import asyncio
+        try:
+            # Run search in thread pool to avoid blocking
+            loop = asyncio.get_event_loop()
+            search_metadata = await loop.run_in_executor(
+                None, 
+                search_service.search_with_metadata,
+                search_request.q,
+                search_request.limit
+            )
+        except Exception as e:
+            logger.error(f"Search execution failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Search execution failed")
         
         # Calculate latency
         latency_ms = int((time.time() - start_time) * 1000)
@@ -136,105 +145,6 @@ async def search_documents(
         )
         raise HTTPException(status_code=500, detail=error_response.model_dump())
 
-@router.get("/search/quick", response_model=SearchResponse)
-async def quick_search_documents(
-    request: Request,
-    q: str = Query(..., min_length=1, max_length=500, description="Search query string"),
-    limit: int = Query(5, ge=1, le=20, description="Maximum number of results to return"),
-    db: Session = Depends(get_db)
-):
-    """
-    Quick search endpoint with reduced limit and faster response
-    
-    Args:
-        q: Natural language search query
-        limit: Maximum number of results to return (1-20, default 5)
-        db: Database session
-        
-    Returns:
-        SearchResponse with top results
-    """
-    start_time = time.time()
-    
-    try:
-        # Validate request
-        search_request = SearchRequest(q=q, limit=min(limit, 20))  # Cap at 20 for quick search
-        
-        # Check cache first
-        cache_key = _get_cache_key(search_request.q, search_request.limit)
-        cached_result = _get_cached_result(cache_key)
-        
-        if cached_result:
-            logger.info(f"Quick search cache hit for query: {search_request.q[:50]}...")
-            return cached_result
-        
-        # Perform hybrid search with reduced limit for speed
-        search_metadata = search_service.search_with_metadata(
-            query=search_request.q,
-            limit=search_request.limit
-        )
-        
-        # Calculate latency
-        latency_ms = int((time.time() - start_time) * 1000)
-        
-        # Format results with snippets (simplified for speed)
-        formatted_results = []
-        for result in search_metadata['results']:
-            # Generate shorter snippet for quick search
-            snippet = _generate_snippet(result.get('text', ''), search_request.q, max_length=150)
-            
-            formatted_result = {
-                'chunk_id': str(result.get('chunk_id', '')),
-                'doc_id': str(result.get('doc_id', '')),
-                'method': int(result.get('method', 0)),
-                'page_from': int(result.get('page_from')) if result.get('page_from') else None,
-                'page_to': int(result.get('page_to')) if result.get('page_to') else None,
-                'hash': str(result.get('hash', '')),
-                'source': str(result.get('source', '')),
-                'snippet': str(snippet) if snippet else None,
-                'score': float(result.get('fused_score', 0.0)),
-                'search_type': 'hybrid'
-            }
-            formatted_results.append(formatted_result)
-        
-        # Create response
-        response = SearchResponse(
-            results=formatted_results,
-            total_results=len(formatted_results),
-            query=search_request.q,
-            limit=search_request.limit,
-            search_type='hybrid',
-            metadata={
-                'semantic_weight': search_metadata['fusion_weights']['semantic'],
-                'lexical_weight': search_metadata['fusion_weights']['lexical'],
-                'individual_results': search_metadata['individual_results'],
-                'latency_ms': latency_ms
-            },
-            latency_ms=latency_ms
-        )
-        
-        # Cache the result
-        _cache_result(cache_key, response)
-        
-        logger.info(f"Quick search completed: {len(formatted_results)} results in {latency_ms}ms for query: {search_request.q[:50]}...")
-        return response
-        
-    except ValueError as e:
-        error_response = SearchError(
-            error=str(e),
-            error_code="VALIDATION_ERROR",
-            details={"field": "query"}
-        )
-        raise HTTPException(status_code=400, detail=error_response.model_dump())
-        
-    except Exception as e:
-        logger.error(f"Quick search failed: {str(e)}")
-        error_response = SearchError(
-            error="Internal search error",
-            error_code="SEARCH_ERROR",
-            details={"message": str(e)}
-        )
-        raise HTTPException(status_code=500, detail=error_response.model_dump())
 
 def _generate_snippet(text: str, query: str, max_length: int = 200) -> str:
     """

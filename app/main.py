@@ -46,6 +46,31 @@ async def startup_event():
         # Initialize search infrastructure
         DatabaseInitService.initialize_search_infrastructure()
         
+        # Add essential performance indexes if using PostgreSQL
+        if settings.database_url.startswith('postgresql://'):
+            try:
+                from sqlalchemy import text
+                with engine.connect() as conn:
+                    # Add only essential indexes for search performance
+                    essential_indexes = [
+                        # Critical: Full-text search index for lexical search
+                        "CREATE INDEX IF NOT EXISTS idx_chunk_text_fts ON chunks USING gin(to_tsvector('english', text));",
+                        # Helpful: For batch fetching chunk text by hash
+                        "CREATE INDEX IF NOT EXISTS idx_chunk_hash ON chunks(hash);",
+                    ]
+                    
+                    for index_sql in essential_indexes:
+                        try:
+                            conn.execute(text(index_sql))
+                            conn.commit()
+                            logging.info(f"Created index: {index_sql.split('ON')[1].split('(')[0].strip()}")
+                        except Exception as e:
+                            logging.warning(f"Could not create index: {e}")
+                    
+                logging.info("Essential performance indexes added successfully")
+            except Exception as e:
+                logging.warning(f"Failed to add performance indexes: {e}")
+        
         # Clear rate limiter on startup to reset any accumulated data
         from app.services.rate_limiter import rate_limiter
         rate_limiter.force_reset()

@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     storage_path: str = "./uploads"
     
     # Search Configuration
-    topk_vec: int = 20  # Vector search top-K
-    topk_lex: int = 20  # Lexical search top-K
+    topk_vec: int = 10  # Vector search top-K (reduced for performance)
+    topk_lex: int = 10  # Lexical search top-K (reduced for performance)
     fuse_sem_weight: float = 0.6  # Semantic search weight
     fuse_lex_weight: float = 0.4  # Lexical search weight
     

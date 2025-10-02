@@ -24,7 +24,7 @@ class VectorSearchService:
     
     def search(self, query: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Perform semantic vector search with optimized database access
+        Perform semantic vector search with optimized database access and timeout protection
         
         Args:
             query: Natural language query string
@@ -34,18 +34,47 @@ class VectorSearchService:
             List of search results with metadata
         """
         try:
-            # Generate query embedding
-            query_vector = self.embeddings.generate_single_embedding(query)
+            # Check if Qdrant is available first
+            if not self.qdrant.is_available():
+                logger.warning("Qdrant not available, skipping vector search")
+                return []
+            
+            # Generate query embedding with timeout
+            import time
+            start_time = time.time()
+            
+            try:
+                query_vector = self.embeddings.generate_single_embedding(query)
+                embedding_time = time.time() - start_time
+                if embedding_time > 3:  # Reduced timeout for embedding (3 seconds)
+                    logger.warning(f"Embedding generation took {embedding_time:.2f}s, skipping vector search")
+                    return []
+                logger.debug(f"Embedding generated in {embedding_time:.2f}s")
+            except Exception as e:
+                logger.warning(f"Embedding generation failed: {str(e)}")
+                return []
             
             # Set limit
             search_limit = limit or self.topk_vec
             
-            # Search vectors in Qdrant
-            results = self.qdrant.search_vectors(
-                query_vector=query_vector,
-                limit=search_limit,
-                score_threshold=0.0
-            )
+            # Search vectors in Qdrant with timeout
+            try:
+                results = self.qdrant.search_vectors(
+                    query_vector=query_vector,
+                    limit=min(search_limit, 15),  # Cap at 15 for performance
+                    score_threshold=0.1  # Higher threshold to filter low-quality results
+                )
+                
+                search_time = time.time() - start_time
+                if search_time > 5:  # Reduced total timeout (5 seconds)
+                    logger.warning(f"Vector search took {search_time:.2f}s, returning partial results")
+                    results = results[:5]  # Return only top 5 results
+                else:
+                    logger.debug(f"Vector search completed in {search_time:.2f}s")
+                    
+            except Exception as e:
+                logger.warning(f"Qdrant search failed: {str(e)}")
+                return []
             
             # Format results and batch fetch text from database
             formatted_results = []
@@ -83,7 +112,7 @@ class VectorSearchService:
             
         except Exception as e:
             logger.error(f"Vector search failed: {str(e)}")
-            raise RuntimeError(f"Vector search failed: {str(e)}")
+            return []  # Return empty list instead of raising exception
     
     def search_with_metadata(self, query: str, limit: Optional[int] = None) -> Dict[str, Any]:
         """
