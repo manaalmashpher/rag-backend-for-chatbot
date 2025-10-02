@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, FileText, AlertCircle } from "lucide-react";
 import { apiService, SearchResponse } from "../services/api";
