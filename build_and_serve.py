@@ -55,7 +55,7 @@ def main():
     # Run database migration if DATABASE_URL is set (production)
     if os.getenv('DATABASE_URL') and os.getenv('DATABASE_URL').startswith('postgres'):
         print("🗄️ Running database migration...")
-        if not run_command("python migrate_database.py"):
+        if not run_command("python3 migrate_database.py"):
             print("⚠️ Database migration failed, but continuing...")
     
     print("✅ Frontend build completed successfully!")
