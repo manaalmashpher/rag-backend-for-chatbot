@@ -3,6 +3,7 @@ Health and readiness check service
 """
 
 import logging
+import time
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -20,6 +21,9 @@ class HealthService:
     def __init__(self):
         self.qdrant_service = None
         self.embedding_service = None
+        self._last_health_check = 0
+        self._cached_health_status = None
+        self._health_cache_ttl = 30  # Cache health status for 30 seconds
         self._initialize_services()
     
     def _initialize_services(self):
@@ -60,15 +64,21 @@ class HealthService:
     
     def readiness_check(self) -> Dict[str, Any]:
         """
-        Readiness check - component dependency validation
+        Readiness check - component dependency validation with caching
         
         Returns:
             Dictionary with readiness status and component health
         """
+        # Check if we have a cached result that's still valid
+        current_time = time.time()
+        if (self._cached_health_status and 
+            current_time - self._last_health_check < self._health_cache_ttl):
+            return self._cached_health_status
+        
         components = {}
         overall_healthy = True
         
-        # Check database connectivity
+        # Check database connectivity (fast check)
         try:
             from sqlalchemy import text
             db = next(get_db())
@@ -86,7 +96,7 @@ class HealthService:
             }
             overall_healthy = False
         
-        # Check Qdrant connectivity
+        # Check Qdrant connectivity (only if service is initialized)
         if self.qdrant_service is not None:
             try:
                 self.qdrant_service.health_check()
@@ -109,7 +119,7 @@ class HealthService:
                 "message": "Qdrant service not initialized - check configuration"
             }
         
-        # Check embedding provider
+        # Check embedding provider (only if service is initialized)
         if self.embedding_service is not None:
             try:
                 self.embedding_service.health_check()
@@ -138,13 +148,19 @@ class HealthService:
             "message": "LLM integration not yet implemented"
         }
         
-        return {
+        result = {
             "status": "ready" if overall_healthy else "not_ready",
             "timestamp": self._get_timestamp(),
             "service": "ionologybot-api",
             "version": "1.0.0",
             "components": components
         }
+        
+        # Cache the result
+        self._cached_health_status = result
+        self._last_health_check = current_time
+        
+        return result
     
     def _get_timestamp(self) -> str:
         """Get current timestamp in ISO format"""

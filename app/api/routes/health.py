@@ -57,3 +57,35 @@ async def readiness_check():
                 "error": str(e)
             }
         )
+
+@router.get("/health/quick")
+async def quick_health_check():
+    """
+    Quick health check endpoint - only checks database connectivity
+    
+    Returns:
+        Basic health status for fast response times
+    """
+    try:
+        from sqlalchemy import text
+        from app.core.database import get_db
+        
+        db = next(get_db())
+        db.execute(text("SELECT 1"))
+        
+        return {
+            "status": "healthy",
+            "timestamp": health_service._get_timestamp(),
+            "service": "ionologybot-api",
+            "version": "1.0.0",
+            "database": "connected"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "status": "unhealthy",
+                "error": str(e),
+                "timestamp": health_service._get_timestamp()
+            }
+        )

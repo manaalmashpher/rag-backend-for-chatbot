@@ -113,18 +113,27 @@ else:
 @app.get("/health")
 async def health_check():
     """Simple health check endpoint (backward compatible)"""
-    print("DEBUG: Health check endpoint called")
+    return {"status": "healthy", "service": "ionologybot-api"}
+
+@app.get("/status")
+async def status_check():
+    """Quick status check for monitoring"""
     try:
-        from app.services.health_service import HealthService
-        print("DEBUG: Creating HealthService")
-        health_service = HealthService()
-        print("DEBUG: Calling liveness_check")
-        result = health_service.liveness_check()
-        print(f"DEBUG: Liveness check result: {result}")
-        return {"status": result["status"]}
+        from sqlalchemy import text
+        from app.core.database import get_db
+        
+        db = next(get_db())
+        db.execute(text("SELECT 1"))
+        
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "service": "ionologybot-api"
+        }
     except Exception as e:
-        print(f"DEBUG: Health check failed with error: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        # If health service fails, return basic health status
-        return {"status": "healthy", "note": "Basic health check - some services may be unavailable"}
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e),
+            "service": "ionologybot-api"
+        }

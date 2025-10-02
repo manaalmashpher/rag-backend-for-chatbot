@@ -29,8 +29,9 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
     queryKey: ["ingestion-status", selectedIngestionId],
     queryFn: () => apiService.getIngestionStatus(selectedIngestionId!),
     enabled: !!selectedIngestionId,
-    // Add request deduplication
-    staleTime: 1000, // Consider data fresh for 1 second
+    // Add request deduplication and caching
+    staleTime: 2000, // Consider data fresh for 2 seconds
+    cacheTime: 30000, // Keep in cache for 30 seconds
     refetchInterval: (query) => {
       // Only poll if the status is actively processing
       if (
@@ -38,12 +39,15 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
         (query.state.data.status === "processing" ||
           query.state.data.status === "indexing")
       ) {
-        // Poll every 5 seconds only for active processing
-        return 5000;
+        // Poll every 10 seconds for active processing (less aggressive)
+        return 10000;
       }
       // No polling for completed, failed, or pending states
       return false;
     },
+    // Add retry configuration
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
   const getStatusIcon = (status: string) => {
