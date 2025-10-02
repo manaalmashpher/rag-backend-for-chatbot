@@ -4,9 +4,10 @@ import axios, { AxiosResponse } from "axios";
 const API_BASE_URL =
   (import.meta as any).env?.VITE_API_BASE_URL ||
   (import.meta as any).env?.VITE_API_URL ||
-  (import.meta as any).env?.MODE === "production"
-    ? ""
-    : "http://localhost:8000";
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1"
+    ? "http://localhost:8000"
+    : "";
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,

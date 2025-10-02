@@ -4,9 +4,10 @@ import axios from "axios";
 const API_BASE_URL =
   (import.meta as any).env?.VITE_API_BASE_URL ||
   (import.meta as any).env?.VITE_API_URL ||
-  (import.meta as any).env?.MODE === "production"
-    ? ""
-    : "http://localhost:8000";
+  window.location.hostname === "localhost" ||
+  window.location.hostname === "127.0.0.1"
+    ? "http://localhost:8000"
+    : "";
 
 const authClient = axios.create({
   baseURL: API_BASE_URL,
@@ -99,13 +100,24 @@ export const authService = {
     confirmPassword: string
   ): Promise<AuthResponse> {
     try {
+      console.log("Attempting registration with API_BASE_URL:", API_BASE_URL);
+      console.log("Registration data:", {
+        email,
+        password: "***",
+        confirm_password: "***",
+      });
+
       const response = await authClient.post("/api/auth/register", {
         email,
         password,
         confirm_password: confirmPassword,
       });
+
+      console.log("Registration response:", response.data);
       return response.data;
     } catch (error: any) {
+      console.error("Registration error:", error);
+      console.error("Error response:", error.response?.data);
       return {
         success: false,
         error: error.response?.data?.detail || "Registration failed",

@@ -45,11 +45,13 @@ async def register_user(
     Register a new user with email and password
     """
     try:
+        print(f"Registration attempt for email: {user_data.email}")
         result = AuthService.register_user(
             db=db,
             email=user_data.email,
             password=user_data.password
         )
+        print(f"Registration result: {result}")
         
         if result["success"]:
             return AuthResponse(
@@ -59,6 +61,7 @@ async def register_user(
                 email=result["email"]
             )
         else:
+            print(f"Registration failed: {result['error']}")
             return AuthResponse(
                 success=False,
                 error=result["error"],
@@ -66,6 +69,9 @@ async def register_user(
             )
     
     except Exception as e:
+        print(f"Registration exception: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Registration failed: {str(e)}"
