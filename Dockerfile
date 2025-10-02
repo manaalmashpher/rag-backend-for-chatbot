@@ -50,7 +50,11 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy the entire built application (including requirements.txt and installed packages)
+# Copy Python packages from builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy the built application
 COPY --from=builder /app /app
 
 # Expose port
