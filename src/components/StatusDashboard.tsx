@@ -25,13 +25,13 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
     isLoading,
     error,
     refetch,
-  } = useQuery<IngestionStatus>({
+  } = useQuery({
     queryKey: ["ingestion-status", selectedIngestionId],
     queryFn: () => apiService.getIngestionStatus(selectedIngestionId!),
     enabled: !!selectedIngestionId,
     // Add request deduplication and caching
     staleTime: 2000, // Consider data fresh for 2 seconds
-    cacheTime: 30000, // Keep in cache for 30 seconds
+    gcTime: 30000, // Keep in cache for 30 seconds (replaces cacheTime)
     refetchInterval: (query) => {
       // Only poll if the status is actively processing
       if (
@@ -167,6 +167,9 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
     );
   }
 
+  // Type assertion to ensure TypeScript knows the structure
+  const statusData = status as IngestionStatus;
+
   return (
     <div className="space-y-6">
       {/* Header with refresh button */}
@@ -175,7 +178,7 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
           <h2 className="text-xl font-semibold text-gray-900">
             Ingestion Status
           </h2>
-          <p className="text-sm text-gray-600">ID: {status.id}</p>
+          <p className="text-sm text-gray-600">ID: {statusData.id}</p>
         </div>
         <button
           onClick={handleRefresh}
@@ -194,21 +197,22 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
       {/* Status Card */}
       <div className="card">
         <div className="flex items-center space-x-4 mb-6">
-          {getStatusIcon(status.status)}
+          {getStatusIcon(statusData.status)}
           <div>
             <h3 className="text-lg font-medium text-gray-900">
-              {status.status.charAt(0).toUpperCase() + status.status.slice(1)}
+              {statusData.status.charAt(0).toUpperCase() +
+                statusData.status.slice(1)}
             </h3>
             <p className="text-sm text-gray-600">
-              {getStatusMessage(status.status)}
+              {getStatusMessage(statusData.status)}
             </p>
           </div>
           <div
             className={`ml-auto px-3 py-1 rounded-full text-sm font-medium border ${getStatusColor(
-              status.status
+              statusData.status
             )}`}
           >
-            {status.status}
+            {statusData.status}
           </div>
         </div>
 
@@ -218,36 +222,36 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
             <h4 className="text-sm font-medium text-gray-700 mb-2">
               Ingestion ID
             </h4>
-            <p className="text-sm text-gray-900 font-mono">{status.id}</p>
+            <p className="text-sm text-gray-900 font-mono">{statusData.id}</p>
           </div>
           <div>
             <h4 className="text-sm font-medium text-gray-700 mb-2">
               Created At
             </h4>
             <p className="text-sm text-gray-900">
-              {new Date(status.created_at).toLocaleString()}
+              {new Date(statusData.created_at).toLocaleString()}
             </p>
           </div>
         </div>
 
         {/* Processing Info */}
-        {status.started_at && (
+        {statusData.started_at && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
             <div className="bg-gray-50 rounded-lg p-4">
               <h4 className="text-sm font-medium text-gray-700 mb-2">
                 Started At
               </h4>
               <p className="text-sm text-gray-900">
-                {new Date(status.started_at).toLocaleString()}
+                {new Date(statusData.started_at).toLocaleString()}
               </p>
             </div>
-            {status.finished_at && (
+            {statusData.finished_at && (
               <div className="bg-gray-50 rounded-lg p-4">
                 <h4 className="text-sm font-medium text-gray-700 mb-2">
                   Finished At
                 </h4>
                 <p className="text-sm text-gray-900">
-                  {new Date(status.finished_at).toLocaleString()}
+                  {new Date(statusData.finished_at).toLocaleString()}
                 </p>
               </div>
             )}
@@ -255,25 +259,28 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
         )}
 
         {/* Blocked Reason */}
-        {status.blocked_reason && (
+        {statusData.blocked_reason && (
           <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
             <h4 className="text-sm font-medium text-yellow-800 mb-2">
               Blocked Reason
             </h4>
-            <p className="text-sm text-yellow-700">{status.blocked_reason}</p>
+            <p className="text-sm text-yellow-700">
+              {statusData.blocked_reason}
+            </p>
           </div>
         )}
 
         {/* Error */}
-        {status.error && (
+        {statusData.error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
             <h4 className="text-sm font-medium text-red-800 mb-2">Error</h4>
-            <p className="text-sm text-red-700">{status.error}</p>
+            <p className="text-sm text-red-700">{statusData.error}</p>
           </div>
         )}
 
         {/* Progress Indicator */}
-        {status.status === "processing" || status.status === "indexing" ? (
+        {statusData.status === "processing" ||
+        statusData.status === "indexing" ? (
           <div className="mt-6">
             <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
               <span>Processing Progress</span>
