@@ -24,7 +24,7 @@ class VectorSearchService:
     
     def search(self, query: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Perform semantic vector search
+        Perform semantic vector search with optimized database access
         
         Args:
             query: Natural language query string
