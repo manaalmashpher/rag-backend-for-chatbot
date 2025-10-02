@@ -3,7 +3,7 @@ nixPkgs = ["nodejs_18", "npm-9_x", "python311", "pip"]
 
 [phases.install]
 cmds = [
-    "npm ci",
+    "npm ci --only=production",
     "pip install --no-cache-dir -r requirements.txt"
 ]
 
@@ -15,3 +15,5 @@ cmd = "python3 run.py"
 
 [variables]
 NIXPACKS_CACHE_DIR = "/tmp/nixpacks-cache"
+PIP_NO_CACHE_DIR = "1"
+PIP_DISABLE_PIP_VERSION_CHECK = "1"
