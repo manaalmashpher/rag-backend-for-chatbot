@@ -11,6 +11,34 @@ from app.schemas.status import IngestionStatus
 
 router = APIRouter()
 
+@router.get("/memory-status")
+async def get_memory_status():
+    """
+    Get current memory usage status
+    """
+    try:
+        import psutil
+        import os
+        
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+        memory_mb = memory_info.rss / 1024 / 1024
+        
+        # Get embedding cache size
+        from app.services.embeddings import EmbeddingService
+        embedding_service = EmbeddingService()
+        cache_size = len(embedding_service._embedding_cache) if hasattr(embedding_service, '_embedding_cache') else 0
+        
+        return {
+            "memory_usage_mb": round(memory_mb, 1),
+            "embedding_cache_size": cache_size,
+            "model": embedding_service.model if hasattr(embedding_service, 'model') else "unknown",
+            "status": "healthy" if memory_mb < 700 else "warning" if memory_mb < 1000 else "critical"
+        }
+        
+    except Exception as e:
+        return {"error": str(e), "status": "error"}
+
 @router.get("/ingestions/{ingestion_id}", response_model=IngestionStatus)
 async def get_ingestion_status(
     ingestion_id: int,

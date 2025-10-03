@@ -48,11 +48,13 @@ class EmbeddingService:
             os.environ['OMP_NUM_THREADS'] = '1'  # Limit OpenMP threads
             os.environ['TOKENIERS_PARALLELISM'] = 'false'  # Alternative spelling for some libraries
             
-            # Load model with memory optimization
+            # Load model with memory optimization for all-mpnet-base-v2
             self.st_model = SentenceTransformer(
                 self.model,
                 device='cpu',  # Force CPU usage to save memory
-                cache_folder='/tmp/sentence_transformers'  # Use tmp folder for caching
+                cache_folder='/tmp/sentence_transformers',  # Use tmp folder for caching
+                trust_remote_code=False,  # Disable remote code for security
+                use_auth_token=False  # Disable auth token
             )
             
             # Force garbage collection after model loading
@@ -91,8 +93,8 @@ class EmbeddingService:
             
             # Generate embeddings for uncached texts
             if texts_to_generate:
-                # Process in smaller batches to reduce memory usage
-                batch_size = min(32, len(texts_to_generate))  # Process max 32 texts at once
+                # Process in smaller batches to reduce memory usage (smaller for all-mpnet-base-v2)
+                batch_size = min(16, len(texts_to_generate))  # Process max 16 texts at once for heavy model
                 new_embeddings_list = []
                 
                 for i in range(0, len(texts_to_generate), batch_size):
@@ -100,9 +102,10 @@ class EmbeddingService:
                     batch_embeddings = self.st_model.encode(batch, convert_to_tensor=False)
                     new_embeddings_list.extend(batch_embeddings.tolist())
                     
-                    # Force garbage collection after each batch
+                    # Force aggressive garbage collection after each batch for heavy model
                     import gc
-                    gc.collect()
+                    for _ in range(2):  # Multiple passes for heavy model
+                        gc.collect()
                 
                 # Cache the new embeddings
                 for text, embedding in zip(texts_to_generate, new_embeddings_list):

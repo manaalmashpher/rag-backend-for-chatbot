@@ -24,8 +24,9 @@ class BackgroundProcessor:
         self.max_processing_time = 300  # 5 minutes max per document
         self.poll_interval = 5  # Check every 5 seconds
         self.max_retries = 3  # Max retries for failed processing
-        self.memory_cleanup_interval = 10  # Cleanup memory every 10 processing cycles
+        self.memory_cleanup_interval = 5  # Cleanup memory every 5 processing cycles
         self.processing_count = 0
+        self.max_memory_mb = 1000  # Emergency cleanup threshold (higher for all-mpnet-base-v2)
     
     async def start_processing(self):
         """Start the background processing loop"""
@@ -38,6 +39,9 @@ class BackgroundProcessor:
         
         try:
             while self.processing:
+                # Check memory usage before processing
+                await self._check_memory_usage()
+                
                 await self._process_pending_ingestions()
                 
                 # Periodic memory cleanup
@@ -141,8 +145,10 @@ class BackgroundProcessor:
             
             logger.info(f"Memory usage before cleanup: {memory_mb:.1f}MB")
             
-            # Force garbage collection
-            collected = gc.collect()
+            # Force garbage collection multiple times
+            collected = 0
+            for _ in range(2):  # Multiple passes
+                collected += gc.collect()
             logger.debug(f"Garbage collection freed {collected} objects")
             
             # Clear embedding cache if it's getting too large
@@ -150,19 +156,68 @@ class BackgroundProcessor:
             embedding_service = EmbeddingService()
             if hasattr(embedding_service, '_embedding_cache'):
                 cache_size = len(embedding_service._embedding_cache)
-                # More conservative threshold - only clear if cache is very large
-                if cache_size > 5000:  # Clear cache if more than 5000 entries
+                # More aggressive cache clearing for all-mpnet-base-v2 (heavier model)
+                if cache_size > 350:  # Clear cache if more than 300 entries (lower threshold for heavy model)
                     embedding_service.clear_cache()
                     logger.info(f"Cleared embedding cache ({cache_size} entries)")
-                elif cache_size > 2000:  # Log warning for large cache
+                elif cache_size > 270:  # Log warning for large cache
                     logger.warning(f"Embedding cache is large: {cache_size} entries")
+            
+            # Force another garbage collection after cache clearing
+            gc.collect()
             
             # Get memory usage after cleanup
             memory_mb_after = process.memory_info().rss / 1024 / 1024
-            logger.info(f"Memory usage after cleanup: {memory_mb_after:.1f}MB (freed {memory_mb - memory_mb_after:.1f}MB)")
+            memory_freed = memory_mb - memory_mb_after
+            
+            if memory_freed > 30:  # Only log if significant memory was freed
+                logger.info(f"Memory usage after cleanup: {memory_mb_after:.1f}MB (freed {memory_freed:.1f}MB)")
+            else:
+                logger.debug(f"Memory usage after cleanup: {memory_mb_after:.1f}MB (freed {memory_freed:.1f}MB)")
             
         except Exception as e:
             logger.warning(f"Memory cleanup failed: {e}")
+    
+    async def _check_memory_usage(self):
+        """Check memory usage and trigger emergency cleanup if needed"""
+        try:
+            import psutil
+            import os
+            
+            process = psutil.Process(os.getpid())
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            if memory_mb > self.max_memory_mb:
+                logger.warning(f"High memory usage detected: {memory_mb:.1f}MB (threshold: {self.max_memory_mb}MB)")
+                await self._emergency_cleanup()
+                
+        except Exception as e:
+            logger.warning(f"Memory check failed: {e}")
+    
+    async def _emergency_cleanup(self):
+        """Emergency memory cleanup when usage is too high"""
+        try:
+            logger.warning("Performing emergency memory cleanup...")
+            
+            # Clear all caches
+            from app.services.embeddings import EmbeddingService
+            embedding_service = EmbeddingService()
+            embedding_service.clear_cache()
+            
+            # Force aggressive garbage collection
+            import gc
+            for _ in range(2):  # Multiple aggressive passes
+                gc.collect()
+            
+            # Check memory after cleanup
+            import psutil
+            import os
+            process = psutil.Process(os.getpid())
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            logger.warning(f"Emergency cleanup completed. Memory usage: {memory_mb:.1f}MB")
+            
+        except Exception as e:
+            logger.error(f"Emergency cleanup failed: {e}")
 
 # Global instance
 background_processor = BackgroundProcessor()
