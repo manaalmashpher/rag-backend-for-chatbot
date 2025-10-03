@@ -46,6 +46,7 @@ python-dotenv==1.0.0
 PyYAML==6.0.2
 click==8.2.1
 tqdm==4.67.1
+psutil==6.1.0  # For memory monitoring
 
 # Core dependencies (required by above packages)
 typing_extensions==4.15.0

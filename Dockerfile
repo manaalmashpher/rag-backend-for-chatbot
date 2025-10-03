@@ -43,7 +43,8 @@
     # Small runtime libs only
     RUN apt-get update && apt-get install -y --no-install-recommends \
         curl libpq5 \
-     && rm -rf /var/lib/apt/lists/*
+     && rm -rf /var/lib/apt/lists/* \
+     && apt-get clean
     
     WORKDIR /app
     

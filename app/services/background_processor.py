@@ -24,6 +24,8 @@ class BackgroundProcessor:
         self.max_processing_time = 300  # 5 minutes max per document
         self.poll_interval = 5  # Check every 5 seconds
         self.max_retries = 3  # Max retries for failed processing
+        self.memory_cleanup_interval = 10  # Cleanup memory every 10 processing cycles
+        self.processing_count = 0
     
     async def start_processing(self):
         """Start the background processing loop"""
@@ -37,6 +39,12 @@ class BackgroundProcessor:
         try:
             while self.processing:
                 await self._process_pending_ingestions()
+                
+                # Periodic memory cleanup
+                self.processing_count += 1
+                if self.processing_count % self.memory_cleanup_interval == 0:
+                    await self._cleanup_memory()
+                
                 await asyncio.sleep(self.poll_interval)  # Check every 5 seconds
         except Exception as e:
             logger.error(f"Background processor error: {e}")
@@ -119,6 +127,42 @@ class BackgroundProcessor:
                     db.close()
                 except Exception as close_error:
                     logger.error(f"Failed to close database connection: {close_error}")
+    
+    async def _cleanup_memory(self):
+        """Perform memory cleanup to prevent memory leaks"""
+        try:
+            import gc
+            import psutil
+            import os
+            
+            # Get current memory usage
+            process = psutil.Process(os.getpid())
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            logger.info(f"Memory usage before cleanup: {memory_mb:.1f}MB")
+            
+            # Force garbage collection
+            collected = gc.collect()
+            logger.debug(f"Garbage collection freed {collected} objects")
+            
+            # Clear embedding cache if it's getting too large
+            from app.services.embeddings import EmbeddingService
+            embedding_service = EmbeddingService()
+            if hasattr(embedding_service, '_embedding_cache'):
+                cache_size = len(embedding_service._embedding_cache)
+                # More conservative threshold - only clear if cache is very large
+                if cache_size > 5000:  # Clear cache if more than 5000 entries
+                    embedding_service.clear_cache()
+                    logger.info(f"Cleared embedding cache ({cache_size} entries)")
+                elif cache_size > 2000:  # Log warning for large cache
+                    logger.warning(f"Embedding cache is large: {cache_size} entries")
+            
+            # Get memory usage after cleanup
+            memory_mb_after = process.memory_info().rss / 1024 / 1024
+            logger.info(f"Memory usage after cleanup: {memory_mb_after:.1f}MB (freed {memory_mb - memory_mb_after:.1f}MB)")
+            
+        except Exception as e:
+            logger.warning(f"Memory cleanup failed: {e}")
 
 # Global instance
 background_processor = BackgroundProcessor()

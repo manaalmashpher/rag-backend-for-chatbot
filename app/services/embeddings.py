@@ -34,18 +34,33 @@ class EmbeddingService:
             EmbeddingService._initialized = True
     
     def _init_sentence_transformers(self):
-        """Initialize Sentence Transformers model"""
+        """Initialize Sentence Transformers model with memory optimization"""
         try:
             from sentence_transformers import SentenceTransformer
             import os
+            import gc
             
             print(f"[INFO] Loading embedding model: {self.model}")
             print(f"[INFO] Model will be cached in: ~/.cache/torch/sentence_transformers/")
             
-            self.st_model = SentenceTransformer(self.model)
+            # Memory optimization settings
+            os.environ['TOKENIZERS_PARALLELISM'] = 'false'  # Disable tokenizer parallelism to save memory
+            os.environ['OMP_NUM_THREADS'] = '1'  # Limit OpenMP threads
+            os.environ['TOKENIERS_PARALLELISM'] = 'false'  # Alternative spelling for some libraries
+            
+            # Load model with memory optimization
+            self.st_model = SentenceTransformer(
+                self.model,
+                device='cpu',  # Force CPU usage to save memory
+                cache_folder='/tmp/sentence_transformers'  # Use tmp folder for caching
+            )
+            
+            # Force garbage collection after model loading
+            gc.collect()
             
             print(f"[INFO] Model loaded successfully!")
             print(f"[INFO] Embedding dimension: {self.st_model.get_sentence_embedding_dimension()}")
+            print(f"[INFO] Model device: {self.st_model.device}")
             
         except ImportError:
             raise RuntimeError("sentence-transformers not installed. Run: pip install sentence-transformers")
@@ -76,8 +91,18 @@ class EmbeddingService:
             
             # Generate embeddings for uncached texts
             if texts_to_generate:
-                new_embeddings = self.st_model.encode(texts_to_generate, convert_to_tensor=False)
-                new_embeddings_list = new_embeddings.tolist()
+                # Process in smaller batches to reduce memory usage
+                batch_size = min(32, len(texts_to_generate))  # Process max 32 texts at once
+                new_embeddings_list = []
+                
+                for i in range(0, len(texts_to_generate), batch_size):
+                    batch = texts_to_generate[i:i + batch_size]
+                    batch_embeddings = self.st_model.encode(batch, convert_to_tensor=False)
+                    new_embeddings_list.extend(batch_embeddings.tolist())
+                    
+                    # Force garbage collection after each batch
+                    import gc
+                    gc.collect()
                 
                 # Cache the new embeddings
                 for text, embedding in zip(texts_to_generate, new_embeddings_list):
