@@ -20,6 +20,7 @@ from app.middleware.logging import StructuredLoggingMiddleware
 from app.middleware.error_handling import ErrorHandlingMiddleware
 import logging
 import os
+import asyncio
 
 app = FastAPI(
     title="IonologyBot API",
@@ -85,6 +86,11 @@ async def startup_event():
         from app.services.rate_limiter import rate_limiter
         rate_limiter.force_reset()
         logging.info("Rate limiter force reset on startup")
+        
+        # Start background processor for document ingestion
+        from app.services.background_processor import background_processor
+        asyncio.create_task(background_processor.start_processing())
+        logging.info("Background document processor started")
         
         logging.info("Database initialization completed successfully")
     except Exception as e:

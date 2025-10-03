@@ -43,8 +43,9 @@ apiClient.interceptors.response.use(
 
 // Types for API responses
 export interface UploadResponse {
-  doc_id: string;
   ingestion_id: string;
+  status: string;
+  message: string;
 }
 
 export interface IngestionStatus {

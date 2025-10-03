@@ -131,35 +131,12 @@ async def upload_file(
     db.add(ingestion)
     db.commit()
     
-    # Process document immediately (synchronous processing)
-    from app.services.ingestion import IngestionService
-    ingestion_service = IngestionService()
-    
-    try:
-        success = ingestion_service.process_document(ingestion.id, db)
-        if success:
-            return UploadResponse(
-                ingestion_id=ingestion.id,
-                status="done",
-                message="Document processed successfully"
-            )
-        else:
-            return UploadResponse(
-                ingestion_id=ingestion.id,
-                status="failed",
-                message="Document processing failed"
-            )
-    except Exception as e:
-        # Update status to failed
-        ingestion.status = "failed"
-        ingestion.error = str(e)
-        db.commit()
-        
-        return UploadResponse(
-            ingestion_id=ingestion.id,
-            status="failed",
-            message=f"Document processing failed: {str(e)}"
-        )
+    # Return immediately - process asynchronously
+    return UploadResponse(
+        ingestion_id=ingestion.id,
+        status="queued",
+        message="Document uploaded successfully. Processing will begin shortly."
+    )
 
 @router.get("/chunking-methods")
 async def get_chunking_methods():

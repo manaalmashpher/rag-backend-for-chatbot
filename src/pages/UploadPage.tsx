@@ -42,17 +42,25 @@ const UploadPage: React.FC = () => {
             Upload Successful
           </h3>
           <p className="text-sm text-blue-700 mb-3">
-            Your document is being processed. You can monitor its status on the
+            {recentUpload.message} You can monitor its processing status on the
             Status page.
           </p>
-          <button
-            onClick={() =>
-              navigate(`/status?ingestion_id=${recentUpload.ingestion_id}`)
-            }
-            className="btn btn-primary text-sm"
-          >
-            View Status
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() =>
+                navigate(`/status?ingestion_id=${recentUpload.ingestion_id}`)
+              }
+              className="btn btn-primary text-sm"
+            >
+              View Status
+            </button>
+            <button
+              onClick={() => setRecentUpload(null)}
+              className="btn btn-secondary text-sm"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
     </div>

@@ -104,7 +104,7 @@ const UploadForm: React.FC<UploadFormProps> = ({
         setDocTitle("");
         setChunkMethod(1);
         setUploadSuccess(false);
-      }, 3000);
+      }, 5000); // Increased to 5 seconds to show the message longer
     } catch (error: any) {
       console.error("Upload error:", error);
       const errorMessage =
