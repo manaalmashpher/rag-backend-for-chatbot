@@ -69,8 +69,10 @@ class BackgroundProcessor:
             
             # Find queued ingestions
             pending_ingestions = db.query(Ingestion).filter(
-                Ingestion.status == "embedding"
+                Ingestion.status == "queued"
             ).limit(1).all()  # Process one at a time
+            
+            logger.debug(f"Found {len(pending_ingestions)} pending ingestions")
             
             for ingestion in pending_ingestions:
                 # Check memory before processing
@@ -79,7 +81,7 @@ class BackgroundProcessor:
                 process = psutil.Process(os.getpid())
                 memory_mb = process.memory_info().rss / 1024 / 1024
                 
-                if memory_mb > 900:  # Skip processing if memory is too high
+                if memory_mb > 1100:  # Skip processing if memory is too high
                     logger.warning(f"Skipping ingestion {ingestion.id} due to high memory usage: {memory_mb:.1f}MB")
                     continue
                 
