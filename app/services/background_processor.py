@@ -24,7 +24,7 @@ class BackgroundProcessor:
         self.max_processing_time = 300  # 5 minutes max per document
         self.poll_interval = 5  # Check every 5 seconds
         self.max_retries = 3  # Max retries for failed processing
-        self.memory_cleanup_interval = 5  # Cleanup memory every 5 processing cycles
+        self.memory_cleanup_interval = 3  # Cleanup memory every 3 processing cycles
         self.processing_count = 0
         self.max_memory_mb = 1000  # Emergency cleanup threshold (higher for all-mpnet-base-v2)
     
@@ -69,11 +69,21 @@ class BackgroundProcessor:
             
             # Find queued ingestions
             pending_ingestions = db.query(Ingestion).filter(
-                Ingestion.status == "queued"
+                Ingestion.status == "embedding"
             ).limit(1).all()  # Process one at a time
             
             for ingestion in pending_ingestions:
-                logger.info(f"Processing ingestion {ingestion.id}")
+                # Check memory before processing
+                import psutil
+                import os
+                process = psutil.Process(os.getpid())
+                memory_mb = process.memory_info().rss / 1024 / 1024
+                
+                if memory_mb > 900:  # Skip processing if memory is too high
+                    logger.warning(f"Skipping ingestion {ingestion.id} due to high memory usage: {memory_mb:.1f}MB")
+                    continue
+                
+                logger.info(f"Processing ingestion {ingestion.id} (memory: {memory_mb:.1f}MB)")
                 start_time = time.time()
                 
                 try:
@@ -156,11 +166,11 @@ class BackgroundProcessor:
             embedding_service = EmbeddingService()
             if hasattr(embedding_service, '_embedding_cache'):
                 cache_size = len(embedding_service._embedding_cache)
-                # More aggressive cache clearing for all-mpnet-base-v2 (heavier model)
-                if cache_size > 350:  # Clear cache if more than 300 entries (lower threshold for heavy model)
+                # Very aggressive cache clearing for all-mpnet-base-v2 (heavier model)
+                if cache_size > 100:  # Clear cache if more than 100 entries (very low threshold)
                     embedding_service.clear_cache()
                     logger.info(f"Cleared embedding cache ({cache_size} entries)")
-                elif cache_size > 270:  # Log warning for large cache
+                elif cache_size > 50:  # Log warning for large cache
                     logger.warning(f"Embedding cache is large: {cache_size} entries")
             
             # Force another garbage collection after cache clearing

@@ -8,6 +8,9 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.models.database import Ingestion
 from app.schemas.status import IngestionStatus
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -38,6 +41,42 @@ async def get_memory_status():
         
     except Exception as e:
         return {"error": str(e), "status": "error"}
+
+@router.post("/retry-stuck-ingestions")
+async def retry_stuck_ingestions(db: Session = Depends(get_db)):
+    """
+    Retry stuck ingestions that are in embedding/indexing status
+    """
+    try:
+        from datetime import datetime, timedelta
+        
+        # Find stuck ingestions (embedding/indexing status for more than 5 minutes)
+        stuck_time = datetime.utcnow() - timedelta(minutes=3)
+        stuck_ingestions = db.query(Ingestion).filter(
+            Ingestion.status.in_(["embedding", "indexing"]),
+            Ingestion.started_at < stuck_time
+        ).all()
+        
+        retried_count = 0
+        for ingestion in stuck_ingestions:
+            # Reset to queued status
+            ingestion.status = "queued"
+            ingestion.started_at = None
+            ingestion.error = None
+            retried_count += 1
+            logger.info(f"Retrying stuck ingestion {ingestion.id}")
+        
+        db.commit()
+        
+        return {
+            "message": f"Retried {retried_count} stuck ingestions",
+            "retried_count": retried_count
+        }
+        
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to retry stuck ingestions: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to retry ingestions: {str(e)}")
 
 @router.get("/ingestions/{ingestion_id}", response_model=IngestionStatus)
 async def get_ingestion_status(
