@@ -190,7 +190,11 @@ class IngestionService:
                 self.qdrant_service.delete_vectors_by_doc_id(document.id, ingestion.method)
                 logger.info(f"Cleaned up existing vectors in Qdrant for document {document.id}, method {ingestion.method}")
             except Exception as e:
-                logger.warning(f"Failed to clean up existing vectors in Qdrant: {e}")
+                # This is expected for the first document upload when no index exists yet
+                if "Index required but not found" in str(e):
+                    logger.info(f"No existing vectors to clean up for document {document.id} (first upload)")
+                else:
+                    logger.warning(f"Failed to clean up existing vectors in Qdrant: {e}")
             
             # Store in Qdrant
             self.qdrant_service.store_vectors(embeddings, payloads)
@@ -199,12 +203,6 @@ class IngestionService:
             import gc
             for _ in range(3):  # Multiple aggressive passes
                 gc.collect()
-            
-            # Clear any large variables to free memory immediately
-            del chunk_texts
-            del payloads
-            del chunks_data
-            del stored_chunks
             
             # Update status to indexing
             ingestion.status = "indexing"
@@ -224,6 +222,12 @@ class IngestionService:
                     self.lexical_index_service.add_chunk_to_index(
                         chunk.id, chunk_data['text'], db
                     )
+            
+            # Clear any large variables to free memory immediately (after lexical indexing)
+            del chunk_texts
+            del payloads
+            del chunks_data
+            del stored_chunks
             
             # Update status to done and set finished_at timestamp
             ingestion.status = "done"
