@@ -42,6 +42,76 @@ async def get_memory_status():
     except Exception as e:
         return {"error": str(e), "status": "error"}
 
+@router.post("/memory-reset")
+async def reset_memory(aggressive: bool = False):
+    """
+    Perform memory cleanup to return to baseline
+    
+    Args:
+        aggressive: If True, clears all caches (slower but more memory freed)
+                   If False, uses smart cache management (faster, keeps recent embeddings)
+    """
+    try:
+        import psutil
+        import os
+        import gc
+        import sys
+        
+        process = psutil.Process(os.getpid())
+        memory_before = process.memory_info().rss / 1024 / 1024
+        
+        # Clear embedding cache based on mode
+        from app.services.embeddings import EmbeddingService
+        embedding_service = EmbeddingService()
+        cache_size_before = len(embedding_service._embedding_cache) if hasattr(embedding_service, '_embedding_cache') else 0
+        
+        if aggressive:
+            # Aggressive mode: clear all caches
+            embedding_service.clear_cache()
+            cache_cleared = cache_size_before
+        else:
+            # Smart mode: only clear if cache is too large
+            if cache_size_before > 200:
+                embedding_service.clear_cache()
+                cache_cleared = cache_size_before
+            else:
+                # Just cleanup old entries
+                embedding_service._cleanup_cache()
+                cache_cleared = cache_size_before - len(embedding_service._embedding_cache)
+        
+        # Clear rate limiter cache
+        from app.services.rate_limiter import rate_limiter
+        rate_limiter.clear_all()
+        
+        # Force aggressive garbage collection
+        collected = 0
+        for _ in range(5):  # Multiple aggressive passes
+            collected += gc.collect()
+        
+        # Clear Python internal caches
+        if hasattr(sys, '_clear_type_cache'):
+            sys._clear_type_cache()
+        
+        # Force another GC pass
+        gc.collect()
+        
+        memory_after = process.memory_info().rss / 1024 / 1024
+        memory_freed = memory_before - memory_after
+        
+        return {
+            "memory_before_mb": round(memory_before, 1),
+            "memory_after_mb": round(memory_after, 1),
+            "memory_freed_mb": round(memory_freed, 1),
+            "embedding_cache_cleared": cache_cleared,
+            "embedding_cache_remaining": len(embedding_service._embedding_cache),
+            "objects_collected": collected,
+            "mode": "aggressive" if aggressive else "smart",
+            "status": "success"
+        }
+        
+    except Exception as e:
+        return {"error": str(e), "status": "error"}
+
 @router.post("/retry-stuck-ingestions")
 async def retry_stuck_ingestions(db: Session = Depends(get_db)):
     """

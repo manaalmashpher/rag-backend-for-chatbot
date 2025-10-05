@@ -30,6 +30,7 @@ class EmbeddingService:
             self._embedding_cache: Dict[str, List[float]] = {}
             self._cache_ttl = 3600  # 1 hour cache
             self._cache_timestamps: Dict[str, float] = {}
+            self._max_cache_size = 200  # Reasonable cache size for performance
             self._init_sentence_transformers()
             EmbeddingService._initialized = True
     
@@ -108,11 +109,15 @@ class EmbeddingService:
                     for _ in range(2):  # Multiple passes for heavy model
                         gc.collect()
                 
-                # Cache the new embeddings
+                # Cache the new embeddings with smart cache management
                 for text, embedding in zip(texts_to_generate, new_embeddings_list):
                     cache_key = self._get_cache_key(text)
                     self._embedding_cache[cache_key] = embedding
                     self._cache_timestamps[cache_key] = time.time()
+                
+                # Smart cache cleanup: remove oldest entries if cache is too large
+                if len(self._embedding_cache) > self._max_cache_size:
+                    self._cleanup_cache()
             
             # Combine cached and new embeddings in correct order
             all_embeddings = [None] * len(texts)
@@ -170,6 +175,24 @@ class EmbeddingService:
             return False
         
         return True
+    
+    def _cleanup_cache(self):
+        """Smart cache cleanup: remove oldest entries to maintain performance"""
+        if len(self._embedding_cache) <= self._max_cache_size:
+            return
+        
+        # Sort by timestamp and remove oldest entries
+        sorted_items = sorted(self._cache_timestamps.items(), key=lambda x: x[1])
+        entries_to_remove = len(self._embedding_cache) - self._max_cache_size
+        
+        for i in range(entries_to_remove):
+            cache_key = sorted_items[i][0]
+            if cache_key in self._embedding_cache:
+                del self._embedding_cache[cache_key]
+            if cache_key in self._cache_timestamps:
+                del self._cache_timestamps[cache_key]
+        
+        logger.debug(f"Cache cleanup: removed {entries_to_remove} oldest entries, cache size now: {len(self._embedding_cache)}")
     
     def clear_cache(self):
         """Clear the embedding cache"""

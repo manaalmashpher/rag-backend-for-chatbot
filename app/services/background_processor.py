@@ -161,7 +161,7 @@ class BackgroundProcessor:
             
             # Force garbage collection multiple times
             collected = 0
-            for _ in range(2):  # Multiple passes
+            for _ in range(3):  # More aggressive passes
                 collected += gc.collect()
             logger.debug(f"Garbage collection freed {collected} objects")
             
@@ -170,8 +170,8 @@ class BackgroundProcessor:
             embedding_service = EmbeddingService()
             if hasattr(embedding_service, '_embedding_cache'):
                 cache_size = len(embedding_service._embedding_cache)
-                # Very aggressive cache clearing for all-mpnet-base-v2 (heavier model)
-                if cache_size > 100:  # Clear cache if more than 100 entries (very low threshold)
+                # Smart cache management for all-mpnet-base-v2 (heavier model)
+                if cache_size > 200:  # Clear cache if more than 200 entries (reasonable threshold)
                     embedding_service.clear_cache()
                     logger.info(f"Cleared embedding cache ({cache_size} entries)")
                 elif cache_size > 50:  # Log warning for large cache

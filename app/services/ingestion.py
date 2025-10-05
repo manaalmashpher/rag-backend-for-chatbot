@@ -126,10 +126,6 @@ class IngestionService:
             memory_increase = memory_after - memory_before
             logger.info(f"Memory after embedding generation: {memory_after:.1f}MB (increase: {memory_increase:.1f}MB)")
             
-            # Force garbage collection after embedding generation
-            import gc
-            gc.collect()
-            
             # Prepare payloads for Qdrant using actual chunk IDs
             payloads = []
             for i, (chunk_data, stored_chunk) in enumerate(zip(chunks_data, stored_chunks)):
@@ -146,6 +142,17 @@ class IngestionService:
             
             # Store in Qdrant
             self.qdrant_service.store_vectors(embeddings, payloads)
+            
+            # Force aggressive garbage collection after embedding generation
+            import gc
+            for _ in range(3):  # Multiple aggressive passes
+                gc.collect()
+            
+            # Clear any large variables to free memory immediately
+            del chunk_texts
+            del payloads
+            del chunks_data
+            del stored_chunks
             
             # Update status to indexing
             ingestion.status = "indexing"
