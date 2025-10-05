@@ -131,12 +131,20 @@ class IngestionService:
             memory_before = process.memory_info().rss / 1024 / 1024
             logger.info(f"Memory before embedding generation: {memory_before:.1f}MB")
             
+            # Special handling for dense documents (like markdown files)
+            is_dense_document = len(chunk_texts) > 11 or len(text) > 10000  # More than 25 chunks or 25k chars
+            if is_dense_document:
+                logger.warning(f"Processing dense document with {len(chunk_texts)} chunks, {len(text)} characters")
+                # Force single-chunk processing for dense documents
+                embeddings = self._process_dense_document_embeddings(chunk_texts, process, ingestion, db)
+                if embeddings is None:  # Processing failed
+                    return False
             # Check if we have too many chunks for current memory
-            if len(chunk_texts) > 50 and memory_before > 800:
+            elif len(chunk_texts) > 15 and memory_before > 1000:
                 logger.warning(f"Large document with {len(chunk_texts)} chunks and {memory_before:.1f}MB memory - processing in smaller batches")
                 # Process in smaller batches to prevent OOM
                 embeddings = []
-                batch_size = 2  # Much smaller batch size for large documents (was 4, now 2)
+                batch_size = 1  # Single chunk processing for memory-constrained environments
                 for i in range(0, len(chunk_texts), batch_size):
                     batch_texts = chunk_texts[i:i + batch_size]
                     batch_embeddings = self.embedding_service.generate_embeddings(batch_texts)
@@ -144,7 +152,7 @@ class IngestionService:
                     
                     # Check memory after each batch
                     memory_after_batch = process.memory_info().rss / 1024 / 1024
-                    if memory_after_batch > 1000:
+                    if memory_after_batch > 1170:
                         logger.error(f"Memory usage too high during processing: {memory_after_batch:.1f}MB")
                         ingestion.status = "failed"
                         ingestion.error = f"Memory usage too high during processing: {memory_after_batch:.1f}MB"
@@ -236,6 +244,56 @@ class IngestionService:
             db.commit()
             return False
     
+    def _process_dense_document_embeddings(self, chunk_texts: list, process, ingestion, db) -> list:
+        """
+        Process embeddings for dense documents with aggressive memory management
+        """
+        import gc
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        embeddings = []
+        total_chunks = len(chunk_texts)
+        
+        logger.info(f"Processing {total_chunks} chunks one by one for dense document")
+        
+        for i, chunk_text in enumerate(chunk_texts):
+            try:
+                # Process single chunk
+                chunk_embeddings = self.embedding_service.generate_embeddings([chunk_text])
+                embeddings.extend(chunk_embeddings)
+                
+                # Aggressive memory cleanup after each chunk
+                del chunk_embeddings
+                gc.collect()
+                
+                # Check memory after every 5 chunks
+                if (i + 1) % 5 == 0:
+                    memory_after = process.memory_info().rss / 1024 / 1024
+                    logger.info(f"Processed {i + 1}/{total_chunks} chunks, memory: {memory_after:.1f}MB")
+                    
+                    if memory_after > 650:  # Very conservative threshold
+                        logger.error(f"Memory usage too high during dense document processing: {memory_after:.1f}MB")
+                        ingestion.status = "failed"
+                        ingestion.error = f"Memory usage too high during dense document processing: {memory_after:.1f}MB"
+                        db.commit()
+                        return None
+                
+                # Force garbage collection every 10 chunks
+                if (i + 1) % 10 == 0:
+                    for _ in range(3):  # Multiple aggressive passes
+                        gc.collect()
+                        
+            except Exception as e:
+                logger.error(f"Error processing chunk {i + 1}: {e}")
+                ingestion.status = "failed"
+                ingestion.error = f"Error processing chunk {i + 1}: {str(e)}"
+                db.commit()
+                return None
+        
+        logger.info(f"Successfully processed all {total_chunks} chunks for dense document")
+        return embeddings
+
     def _get_file_extension(self, mime_type: str) -> str:
         """Get file extension from MIME type"""
         mime_to_ext = {

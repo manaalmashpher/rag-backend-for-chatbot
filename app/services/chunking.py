@@ -23,6 +23,17 @@ class ChunkingService:
         Returns:
             List of chunk dictionaries with text, metadata, etc.
         """
+        # Check if this is a dense document (like markdown) and adjust method
+        is_dense = len(text) > 10000 or text.count('\n') > 1000
+        if is_dense and method in [1, 2, 3]:  # For fixed-size, sentence, or paragraph methods
+            # Use larger chunk sizes for dense documents to reduce total chunks
+            if method == 1:
+                return self._method_1_fixed_size(text, chunk_size=2000, overlap=200, **kwargs)
+            elif method == 2:
+                return self._method_2_sentence_boundary(text, max_chunk_size=2000, **kwargs)
+            elif method == 3:
+                return self._method_3_paragraph_boundary(text, max_chunk_size=2500, **kwargs)
+        
         if method == 1:
             return self._method_1_fixed_size(text, **kwargs)
         elif method == 2:
@@ -280,8 +291,8 @@ class ChunkingService:
         
         return recursive_split(text)
     
-    def _method_7_topic_based(self, text: str, max_chunk_size: int = 1200) -> List[Dict[str, Any]]:
-        """Topic-based chunking using simple heuristics"""
+    def _method_7_topic_based(self, text: str, max_chunk_size: int = 2000) -> List[Dict[str, Any]]:
+        """Topic-based chunking using simple heuristics - optimized for markdown"""
         # Simple topic detection based on common topic indicators
         topic_indicators = [
             r'\n\s*#+\s+',  # Markdown headers

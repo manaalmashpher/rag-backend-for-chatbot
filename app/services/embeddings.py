@@ -30,7 +30,7 @@ class EmbeddingService:
             self._embedding_cache: Dict[str, List[float]] = {}
             self._cache_ttl = 3600  # 1 hour cache
             self._cache_timestamps: Dict[str, float] = {}
-            self._max_cache_size = 200  # Reasonable cache size for performance
+            self._max_cache_size = 100  # Reduced cache size for Railway deployment
             self._init_sentence_transformers()
             EmbeddingService._initialized = True
     
@@ -95,8 +95,8 @@ class EmbeddingService:
             # Generate embeddings for uncached texts
             if texts_to_generate:
                 # Process in very small batches to reduce memory usage (very small for all-mpnet-base-v2)
-                # Even smaller batch size for memory-constrained environments
-                batch_size = min(4, len(texts_to_generate))  # Process max 4 texts at once for heavy model
+                # Even smaller batch size for memory-constrained environments like Railway
+                batch_size = min(2, len(texts_to_generate))  # Process max 2 texts at once for Railway deployment
                 new_embeddings_list = []
                 
                 for i in range(0, len(texts_to_generate), batch_size):

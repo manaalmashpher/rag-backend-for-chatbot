@@ -77,19 +77,35 @@ class BackgroundProcessor:
             
             # Get failed ingestions that can be retried (failed more than 1 minute ago, less than 3 retries)
             retry_time = datetime.utcnow() - timedelta(minutes=1)
-            failed_ingestions = db.query(Ingestion).filter(
-                Ingestion.status == "failed",
-                Ingestion.finished_at < retry_time,
-                Ingestion.retry_count < self.max_retries
-            ).limit(1).all()
+            try:
+                failed_ingestions = db.query(Ingestion).filter(
+                    Ingestion.status == "failed",
+                    Ingestion.finished_at < retry_time,
+                    Ingestion.retry_count < self.max_retries
+                ).limit(1).all()
+            except Exception as e:
+                # If retry_count column doesn't exist, query without it
+                logger.warning(f"retry_count column not found, querying without it: {e}")
+                failed_ingestions = db.query(Ingestion).filter(
+                    Ingestion.status == "failed",
+                    Ingestion.finished_at < retry_time
+                ).limit(1).all()
             
-            # Get stuck ingestions in embedding/indexing status (started more than 10 minutes ago)
+            # Get stuck ingestions in embedding/indexing status (started more than 6 minutes ago)
             stuck_time = datetime.utcnow() - timedelta(minutes=6)
-            stuck_ingestions = db.query(Ingestion).filter(
-                Ingestion.status.in_(["embedding", "indexing"]),
-                Ingestion.started_at < stuck_time,
-                Ingestion.retry_count < self.max_retries
-            ).limit(1).all()
+            try:
+                stuck_ingestions = db.query(Ingestion).filter(
+                    Ingestion.status.in_(["embedding", "indexing"]),
+                    Ingestion.started_at < stuck_time,
+                    Ingestion.retry_count < self.max_retries
+                ).limit(1).all()
+            except Exception as e:
+                # If retry_count column doesn't exist, query without it
+                logger.warning(f"retry_count column not found for stuck ingestions, querying without it: {e}")
+                stuck_ingestions = db.query(Ingestion).filter(
+                    Ingestion.status.in_(["embedding", "indexing"]),
+                    Ingestion.started_at < stuck_time
+                ).limit(1).all()
             
             # Mark stuck ingestions as failed so they can be retried
             for stuck_ingestion in stuck_ingestions:
@@ -112,12 +128,15 @@ class BackgroundProcessor:
                 process = psutil.Process(os.getpid())
                 memory_mb = process.memory_info().rss / 1024 / 1024
                 
-                if memory_mb > 1200:  # Skip processing if memory is too high (increased threshold for all-mpnet-base-v2)
+                if memory_mb > 1150:  # Skip processing if memory is too high (reduced for Railway deployment)
                     logger.warning(f"Skipping ingestion {ingestion.id} due to high memory usage: {memory_mb:.1f}MB")
                     continue
                 
                 # Handle retry logic
                 if ingestion.status == "failed":
+                    # Check if retry_count field exists, if not set to 0
+                    if not hasattr(ingestion, 'retry_count'):
+                        ingestion.retry_count = 0
                     ingestion.retry_count += 1
                     ingestion.status = "queued"
                     ingestion.started_at = None
@@ -163,6 +182,8 @@ class BackgroundProcessor:
                     logger.error(f"Error processing ingestion {ingestion.id} after {processing_time:.2f}s: {e}")
                     logger.error(f"Error type: {type(e).__name__}")
                     logger.error(f"Error details: {str(e)}")
+                    import traceback
+                    logger.error(f"Full traceback: {traceback.format_exc()}")
                     # Update status to failed
                     try:
                         ingestion.status = "failed"
