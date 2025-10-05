@@ -3,6 +3,7 @@ Document ingestion pipeline service
 """
 
 import os
+import psutil
 from typing import Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
@@ -114,8 +115,6 @@ class IngestionService:
             chunk_texts = [chunk_data['text'] for chunk_data in chunks_data]
             
             # Check memory before embedding generation
-            import psutil
-            import os
             process = psutil.Process(os.getpid())
             memory_before = process.memory_info().rss / 1024 / 1024
             logger.info(f"Memory before embedding generation: {memory_before:.1f}MB")
