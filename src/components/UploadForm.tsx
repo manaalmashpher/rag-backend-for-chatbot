@@ -24,7 +24,7 @@ const ALLOWED_FILE_TYPES = {
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
     ".docx",
   ],
-  "text/plain": [".txt"],
+  "text/plain": [".txt", ".md"], // Allow .md files to be detected as text/plain
   "text/markdown": [".md"],
 };
 

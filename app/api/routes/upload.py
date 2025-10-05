@@ -56,6 +56,12 @@ async def upload_file(
         'text/markdown': '.md'
     }
     
+    # Also check file extension for .md files since browsers might report them as text/plain
+    file_extension = os.path.splitext(file.filename or '')[-1].lower()
+    if file_extension == '.md' and file.content_type == 'text/plain':
+        # Override MIME type for .md files that are reported as text/plain
+        file.content_type = 'text/markdown'
+    
     if file.content_type not in allowed_types:
         raise HTTPException(
             status_code=400,
