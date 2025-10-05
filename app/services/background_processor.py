@@ -75,8 +75,8 @@ class BackgroundProcessor:
                 Ingestion.status == "queued"
             ).limit(1).all()
             
-            # Get failed ingestions that can be retried (failed more than 5 minutes ago, less than 3 retries)
-            retry_time = datetime.utcnow() - timedelta(minutes=5)
+            # Get failed ingestions that can be retried (failed more than 1 minute ago, less than 3 retries)
+            retry_time = datetime.utcnow() - timedelta(minutes=1)
             failed_ingestions = db.query(Ingestion).filter(
                 Ingestion.status == "failed",
                 Ingestion.finished_at < retry_time,
