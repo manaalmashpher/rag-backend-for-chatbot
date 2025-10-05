@@ -29,6 +29,7 @@ class Ingestion(Base):
     method = Column(Integer, nullable=False)  # Chunking method 1-8
     status = Column(String(50), nullable=False, default="queued")
     error = Column(Text, nullable=True)
+    retry_count = Column(Integer, nullable=False, default=0)
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

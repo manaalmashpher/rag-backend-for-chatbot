@@ -67,10 +67,24 @@ class BackgroundProcessor:
         try:
             db = next(get_db())
             
-            # Find queued ingestions
-            pending_ingestions = db.query(Ingestion).filter(
+            # Find queued ingestions and retry failed ones
+            from datetime import datetime, timedelta
+            
+            # Get queued ingestions
+            queued_ingestions = db.query(Ingestion).filter(
                 Ingestion.status == "queued"
-            ).limit(1).all()  # Process one at a time
+            ).limit(1).all()
+            
+            # Get failed ingestions that can be retried (failed more than 5 minutes ago, less than 3 retries)
+            retry_time = datetime.utcnow() - timedelta(minutes=5)
+            failed_ingestions = db.query(Ingestion).filter(
+                Ingestion.status == "failed",
+                Ingestion.finished_at < retry_time,
+                Ingestion.retry_count < self.max_retries
+            ).limit(1).all()
+            
+            # Combine both lists
+            pending_ingestions = queued_ingestions + failed_ingestions
             
             logger.debug(f"Found {len(pending_ingestions)} pending ingestions")
             
@@ -84,6 +98,15 @@ class BackgroundProcessor:
                 if memory_mb > 1200:  # Skip processing if memory is too high (increased threshold for all-mpnet-base-v2)
                     logger.warning(f"Skipping ingestion {ingestion.id} due to high memory usage: {memory_mb:.1f}MB")
                     continue
+                
+                # Handle retry logic
+                if ingestion.status == "failed":
+                    ingestion.retry_count += 1
+                    ingestion.status = "queued"
+                    ingestion.started_at = None
+                    ingestion.error = None
+                    db.commit()
+                    logger.info(f"Retrying ingestion {ingestion.id} (attempt {ingestion.retry_count}/{self.max_retries})")
                 
                 logger.info(f"Processing ingestion {ingestion.id} (memory: {memory_mb:.1f}MB)")
                 start_time = time.time()

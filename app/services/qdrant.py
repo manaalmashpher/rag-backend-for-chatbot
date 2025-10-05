@@ -201,6 +201,50 @@ class QdrantService:
         except Exception as e:
             raise RuntimeError(f"Failed to delete vectors by hash: {str(e)}")
     
+    def delete_vectors_by_doc_id(self, doc_id: int, method: int) -> bool:
+        """
+        Delete vectors by document ID and method
+        
+        Args:
+            doc_id: Document ID to delete vectors for
+            method: Chunking method to delete vectors for
+            
+        Returns:
+            True if successful
+        """
+        try:
+            # Find vectors by doc_id and method
+            results = self.client.scroll(
+                collection_name=self.collection_name,
+                scroll_filter={
+                    "must": [
+                        {
+                            "key": "doc_id",
+                            "match": {"value": doc_id}
+                        },
+                        {
+                            "key": "method",
+                            "match": {"value": method}
+                        }
+                    ]
+                },
+                limit=10000  # Large limit to get all vectors for this document
+            )
+            
+            vector_ids = [vector.id for vector in results[0]]
+            
+            # Delete found vectors
+            if vector_ids:
+                self.client.delete(
+                    collection_name=self.collection_name,
+                    points_selector=vector_ids
+                )
+                print(f"Deleted {len(vector_ids)} vectors from Qdrant for doc_id {doc_id}, method {method}")
+            
+            return True
+        except Exception as e:
+            raise RuntimeError(f"Failed to delete vectors by doc_id: {str(e)}")
+    
     def health_check(self) -> bool:
         """
         Check if Qdrant service is healthy

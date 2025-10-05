@@ -88,6 +88,18 @@ class IngestionService:
             ingestion.status = "chunking"
             db.commit()
             
+            # Clean up any existing chunks for this document and method (in case of retry)
+            existing_chunks = db.query(Chunk).filter(
+                Chunk.doc_id == document.id,
+                Chunk.method == ingestion.method
+            ).all()
+            
+            if existing_chunks:
+                logger.info(f"Cleaning up {len(existing_chunks)} existing chunks for document {document.id}, method {ingestion.method}")
+                for chunk in existing_chunks:
+                    db.delete(chunk)
+                db.commit()
+            
             # Chunk text with page information
             chunks_data = self.chunking_service.chunk_text_with_pages(text, ingestion.method, pages)
             
@@ -119,7 +131,32 @@ class IngestionService:
             memory_before = process.memory_info().rss / 1024 / 1024
             logger.info(f"Memory before embedding generation: {memory_before:.1f}MB")
             
-            embeddings = self.embedding_service.generate_embeddings(chunk_texts)
+            # Check if we have too many chunks for current memory
+            if len(chunk_texts) > 50 and memory_before > 800:
+                logger.warning(f"Large document with {len(chunk_texts)} chunks and {memory_before:.1f}MB memory - processing in smaller batches")
+                # Process in smaller batches to prevent OOM
+                embeddings = []
+                batch_size = 2  # Much smaller batch size for large documents (was 4, now 2)
+                for i in range(0, len(chunk_texts), batch_size):
+                    batch_texts = chunk_texts[i:i + batch_size]
+                    batch_embeddings = self.embedding_service.generate_embeddings(batch_texts)
+                    embeddings.extend(batch_embeddings)
+                    
+                    # Check memory after each batch
+                    memory_after_batch = process.memory_info().rss / 1024 / 1024
+                    if memory_after_batch > 1000:
+                        logger.error(f"Memory usage too high during processing: {memory_after_batch:.1f}MB")
+                        ingestion.status = "failed"
+                        ingestion.error = f"Memory usage too high during processing: {memory_after_batch:.1f}MB"
+                        db.commit()
+                        return False
+                    
+                    # Force garbage collection after each batch
+                    import gc
+                    gc.collect()
+            else:
+                # Normal processing for smaller documents
+                embeddings = self.embedding_service.generate_embeddings(chunk_texts)
             
             # Check memory after embedding generation
             memory_after = process.memory_info().rss / 1024 / 1024
@@ -139,6 +176,13 @@ class IngestionService:
                     'source': document.title
                 }
                 payloads.append(payload)
+            
+            # Clean up existing vectors in Qdrant for this document and method
+            try:
+                self.qdrant_service.delete_vectors_by_doc_id(document.id, ingestion.method)
+                logger.info(f"Cleaned up existing vectors in Qdrant for document {document.id}, method {ingestion.method}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up existing vectors in Qdrant: {e}")
             
             # Store in Qdrant
             self.qdrant_service.store_vectors(embeddings, payloads)
