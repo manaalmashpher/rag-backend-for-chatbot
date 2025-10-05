@@ -83,6 +83,23 @@ class BackgroundProcessor:
                 Ingestion.retry_count < self.max_retries
             ).limit(1).all()
             
+            # Get stuck ingestions in embedding/indexing status (started more than 10 minutes ago)
+            stuck_time = datetime.utcnow() - timedelta(minutes=6)
+            stuck_ingestions = db.query(Ingestion).filter(
+                Ingestion.status.in_(["embedding", "indexing"]),
+                Ingestion.started_at < stuck_time,
+                Ingestion.retry_count < self.max_retries
+            ).limit(1).all()
+            
+            # Mark stuck ingestions as failed so they can be retried
+            for stuck_ingestion in stuck_ingestions:
+                original_status = stuck_ingestion.status
+                stuck_ingestion.status = "failed"
+                stuck_ingestion.error = f"Processing stuck in {original_status} status for more than 10 minutes"
+                stuck_ingestion.finished_at = datetime.utcnow()
+                logger.warning(f"Marked stuck ingestion {stuck_ingestion.id} as failed for retry (was {original_status})")
+            db.commit()
+            
             # Combine both lists
             pending_ingestions = queued_ingestions + failed_ingestions
             
