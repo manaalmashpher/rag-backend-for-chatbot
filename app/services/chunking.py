@@ -26,13 +26,13 @@ class ChunkingService:
         # Check if this is a dense document (like markdown) and adjust method
         is_dense = len(text) > 10000 or text.count('\n') > 1000
         if is_dense and method in [1, 2, 3]:  # For fixed-size, sentence, or paragraph methods
-            # Use larger chunk sizes for dense documents to reduce total chunks
+            # Use much larger chunk sizes for dense documents to reduce total chunks
             if method == 1:
-                return self._method_1_fixed_size(text, chunk_size=2000, overlap=200, **kwargs)
+                return self._method_1_fixed_size(text, chunk_size=3000, overlap=300, **kwargs)
             elif method == 2:
-                return self._method_2_sentence_boundary(text, max_chunk_size=2000, **kwargs)
+                return self._method_2_sentence_boundary(text, max_chunk_size=3000, **kwargs)
             elif method == 3:
-                return self._method_3_paragraph_boundary(text, max_chunk_size=2500, **kwargs)
+                return self._method_3_paragraph_boundary(text, max_chunk_size=3500, **kwargs)
         
         if method == 1:
             return self._method_1_fixed_size(text, **kwargs)

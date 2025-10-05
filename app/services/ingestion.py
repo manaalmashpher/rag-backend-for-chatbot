@@ -271,22 +271,29 @@ class IngestionService:
                 del chunk_embeddings
                 gc.collect()
                 
-                # Check memory after every 5 chunks
-                if (i + 1) % 5 == 0:
-                    memory_after = process.memory_info().rss / 1024 / 1024
+                # Check memory after every chunk for dense documents
+                memory_after = process.memory_info().rss / 1024 / 1024
+                if (i + 1) % 3 == 0:  # Log every 3 chunks
                     logger.info(f"Processed {i + 1}/{total_chunks} chunks, memory: {memory_after:.1f}MB")
-                    
-                    if memory_after > 650:  # Very conservative threshold
-                        logger.error(f"Memory usage too high during dense document processing: {memory_after:.1f}MB")
-                        ingestion.status = "failed"
-                        ingestion.error = f"Memory usage too high during dense document processing: {memory_after:.1f}MB"
-                        db.commit()
-                        return None
                 
-                # Force garbage collection every 10 chunks
-                if (i + 1) % 10 == 0:
+                if memory_after > 1000:  # Very conservative threshold for Railway
+                    logger.error(f"Memory usage too high during dense document processing: {memory_after:.1f}MB")
+                    ingestion.status = "failed"
+                    ingestion.error = f"Memory usage too high during dense document processing: {memory_after:.1f}MB"
+                    db.commit()
+                    return None
+                
+                # Force garbage collection every 3 chunks for dense documents
+                if (i + 1) % 3 == 0:
                     for _ in range(3):  # Multiple aggressive passes
                         gc.collect()
+                    
+                    # Clear embedding cache if memory is still high
+                    if memory_after > 1000:
+                        from app.services.embeddings import EmbeddingService
+                        embedding_service = EmbeddingService()
+                        embedding_service.clear_cache()
+                        logger.info("Cleared embedding cache due to high memory usage")
                         
             except Exception as e:
                 logger.error(f"Error processing chunk {i + 1}: {e}")
