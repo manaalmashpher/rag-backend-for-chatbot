@@ -26,7 +26,7 @@ class BackgroundProcessor:
         self.max_retries = 3  # Max retries for failed processing
         self.memory_cleanup_interval = 3  # Cleanup memory every 3 processing cycles
         self.processing_count = 0
-        self.max_memory_mb = 1000  # Emergency cleanup threshold (higher for all-mpnet-base-v2)
+        self.max_memory_mb = 1200  # Emergency cleanup threshold (higher for all-mpnet-base-v2)
     
     async def start_processing(self):
         """Start the background processing loop"""
@@ -197,13 +197,20 @@ class BackgroundProcessor:
         try:
             import psutil
             import os
+            import time
             
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
             
             if memory_mb > self.max_memory_mb:
-                logger.warning(f"High memory usage detected: {memory_mb:.1f}MB (threshold: {self.max_memory_mb}MB)")
-                await self._emergency_cleanup()
+                # Only trigger emergency cleanup if we haven't done it recently
+                current_time = time.time()
+                if not hasattr(self, '_last_emergency_cleanup') or (current_time - self._last_emergency_cleanup) > 30:
+                    logger.warning(f"High memory usage detected: {memory_mb:.1f}MB (threshold: {self.max_memory_mb}MB)")
+                    await self._emergency_cleanup()
+                    self._last_emergency_cleanup = current_time
+                else:
+                    logger.debug(f"High memory usage detected but cleanup was recent: {memory_mb:.1f}MB")
                 
         except Exception as e:
             logger.warning(f"Memory check failed: {e}")
@@ -222,6 +229,11 @@ class BackgroundProcessor:
             import gc
             for _ in range(2):  # Multiple aggressive passes
                 gc.collect()
+            
+            # Try to clear any remaining references
+            import sys
+            if hasattr(sys, '_clear_type_cache'):
+                sys._clear_type_cache()
             
             # Check memory after cleanup
             import psutil
