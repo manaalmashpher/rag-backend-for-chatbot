@@ -81,7 +81,7 @@ class BackgroundProcessor:
                 process = psutil.Process(os.getpid())
                 memory_mb = process.memory_info().rss / 1024 / 1024
                 
-                if memory_mb > 1100:  # Skip processing if memory is too high
+                if memory_mb > 1200:  # Skip processing if memory is too high (increased threshold for all-mpnet-base-v2)
                     logger.warning(f"Skipping ingestion {ingestion.id} due to high memory usage: {memory_mb:.1f}MB")
                     continue
                 
@@ -121,6 +121,8 @@ class BackgroundProcessor:
                 except Exception as e:
                     processing_time = time.time() - start_time
                     logger.error(f"Error processing ingestion {ingestion.id} after {processing_time:.2f}s: {e}")
+                    logger.error(f"Error type: {type(e).__name__}")
+                    logger.error(f"Error details: {str(e)}")
                     # Update status to failed
                     try:
                         ingestion.status = "failed"

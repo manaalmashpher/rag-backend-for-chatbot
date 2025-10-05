@@ -38,9 +38,14 @@ class IngestionService:
             True if successful
         """
         try:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Starting to process document for ingestion {ingestion_id}")
+            
             # Get ingestion record
             ingestion = db.query(Ingestion).filter(Ingestion.id == ingestion_id).first()
             if not ingestion:
+                logger.error(f"Ingestion {ingestion_id} not found in database")
                 return False
             
             # Set started_at timestamp
@@ -107,7 +112,24 @@ class IngestionService:
             
             # Generate embeddings
             chunk_texts = [chunk_data['text'] for chunk_data in chunks_data]
+            
+            # Check memory before embedding generation
+            import psutil
+            import os
+            process = psutil.Process(os.getpid())
+            memory_before = process.memory_info().rss / 1024 / 1024
+            logger.info(f"Memory before embedding generation: {memory_before:.1f}MB")
+            
             embeddings = self.embedding_service.generate_embeddings(chunk_texts)
+            
+            # Check memory after embedding generation
+            memory_after = process.memory_info().rss / 1024 / 1024
+            memory_increase = memory_after - memory_before
+            logger.info(f"Memory after embedding generation: {memory_after:.1f}MB (increase: {memory_increase:.1f}MB)")
+            
+            # Force garbage collection after embedding generation
+            import gc
+            gc.collect()
             
             # Prepare payloads for Qdrant using actual chunk IDs
             payloads = []
@@ -153,6 +175,10 @@ class IngestionService:
             return True
             
         except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error processing document for ingestion {ingestion_id}: {str(e)}")
+            logger.error(f"Error type: {type(e).__name__}")
             # Update status to failed and set finished_at timestamp
             ingestion.status = "failed"
             ingestion.error = str(e)

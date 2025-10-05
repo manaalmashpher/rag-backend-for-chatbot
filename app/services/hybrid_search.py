@@ -35,37 +35,25 @@ class HybridSearchService:
             List of fused search results ranked by combined score
         """
         try:
-            # Perform both searches in parallel with timeout protection
-            import concurrent.futures
-            import threading
+            # Perform both searches sequentially to prevent memory spikes
             import time
             
             semantic_results = []
             lexical_results = []
             
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                # Submit both searches to run in parallel
-                semantic_future = executor.submit(self._safe_vector_search, query, self.topk_vec)
-                lexical_future = executor.submit(self._safe_lexical_search, query, self.topk_lex)
-                
-                # Wait for both to complete with reduced timeout (6 seconds max)
-                try:
-                    semantic_results = semantic_future.result(timeout=6)
-                except concurrent.futures.TimeoutError:
-                    logger.warning("Vector search timed out, using lexical results only")
-                    semantic_results = []
-                except Exception as e:
-                    logger.warning(f"Vector search failed: {str(e)}, using lexical results only")
-                    semantic_results = []
-                
-                try:
-                    lexical_results = lexical_future.result(timeout=6)
-                except concurrent.futures.TimeoutError:
-                    logger.warning("Lexical search timed out, using semantic results only")
-                    lexical_results = []
-                except Exception as e:
-                    logger.warning(f"Lexical search failed: {str(e)}, using semantic results only")
-                    lexical_results = []
+            # Use single-threaded execution to prevent memory spikes with embedding model
+            # Sequential execution is safer for memory-constrained environments
+            try:
+                semantic_results = self._safe_vector_search(query, self.topk_vec)
+            except Exception as e:
+                logger.warning(f"Vector search failed: {str(e)}, using lexical results only")
+                semantic_results = []
+            
+            try:
+                lexical_results = self._safe_lexical_search(query, self.topk_lex)
+            except Exception as e:
+                logger.warning(f"Lexical search failed: {str(e)}, using semantic results only")
+                lexical_results = []
             
             # If both failed, return empty results
             if not semantic_results and not lexical_results:

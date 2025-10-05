@@ -94,7 +94,8 @@ class EmbeddingService:
             # Generate embeddings for uncached texts
             if texts_to_generate:
                 # Process in very small batches to reduce memory usage (very small for all-mpnet-base-v2)
-                batch_size = min(8, len(texts_to_generate))  # Process max 8 texts at once for heavy model
+                # Even smaller batch size for memory-constrained environments
+                batch_size = min(4, len(texts_to_generate))  # Process max 4 texts at once for heavy model
                 new_embeddings_list = []
                 
                 for i in range(0, len(texts_to_generate), batch_size):
