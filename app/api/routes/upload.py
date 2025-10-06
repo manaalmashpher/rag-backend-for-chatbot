@@ -191,33 +191,44 @@ async def delete_document(
         
         logger.info(f"Deleting document {doc_id}: {len(chunks)} chunks, {len(ingestions)} ingestions")
         
-        # Delete from Qdrant using doc_id (more efficient than hash lookup)
+        # Delete from Qdrant using hash values (doc_id index may not exist)
         qdrant_vectors_deleted = 0
         try:
             qdrant_service = QdrantService()
-            if qdrant_service.is_available():
-                # Delete vectors for all methods used by this document
-                methods = list(set([ingestion.method for ingestion in ingestions]))
-                for method in methods:
-                    qdrant_service.delete_vectors_by_doc_id(doc_id, method)
-                    qdrant_vectors_deleted += len(chunks)  # Approximate count
-                logger.info(f"Deleted vectors from Qdrant for document {doc_id}")
+            if qdrant_service.is_available() and chunks:
+                # Get chunk hashes for deletion
+                chunk_hashes = [chunk.hash for chunk in chunks]
+                qdrant_service.delete_vectors_by_hash(chunk_hashes)
+                qdrant_vectors_deleted = len(chunk_hashes)
+                logger.info(f"Deleted {qdrant_vectors_deleted} vectors from Qdrant for document {doc_id}")
             else:
-                logger.warning("Qdrant service not available, skipping vector cleanup")
+                logger.warning("Qdrant service not available or no chunks to delete")
         except Exception as e:
             logger.warning(f"Failed to delete vectors from Qdrant: {e}")
         
-        # Delete from PostgreSQL FTS index (PostgreSQL syntax)
+        # Delete from PostgreSQL FTS index (if it exists)
+        fts_entries_deleted = 0
         try:
             from sqlalchemy import text
-            # Delete from the FTS index if it exists
-            db.execute(text("""
-                DELETE FROM chunks_fts 
-                WHERE id IN (
-                    SELECT id FROM chunks WHERE doc_id = :doc_id
+            # Check if FTS table exists first
+            result = db.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_name = 'chunks_fts'
                 )
-            """), {"doc_id": doc_id})
-            logger.info(f"Deleted FTS entries for document {doc_id}")
+            """)).scalar()
+            
+            if result:
+                # Delete from the FTS index
+                fts_entries_deleted = db.execute(text("""
+                    DELETE FROM chunks_fts 
+                    WHERE id IN (
+                        SELECT id FROM chunks WHERE doc_id = :doc_id
+                    )
+                """), {"doc_id": doc_id}).rowcount
+                logger.info(f"Deleted {fts_entries_deleted} FTS entries for document {doc_id}")
+            else:
+                logger.info("FTS table does not exist, skipping FTS cleanup")
         except Exception as e:
             logger.warning(f"Failed to delete FTS entries: {e}")
         
@@ -261,6 +272,7 @@ async def delete_document(
                 "postgresql_chunks_deleted": chunks_deleted,
                 "postgresql_ingestions_deleted": ingestions_deleted,
                 "qdrant_vectors_deleted": qdrant_vectors_deleted,
+                "fts_entries_deleted": fts_entries_deleted,
                 "physical_file_deleted": file_deleted
             }
         }
