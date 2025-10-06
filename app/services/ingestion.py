@@ -229,6 +229,15 @@ class IngestionService:
             del chunks_data
             del stored_chunks
             
+            # Final aggressive cleanup after document processing
+            import gc
+            for _ in range(3):  # Multiple aggressive passes
+                gc.collect()
+            
+            # Clear embedding cache to free memory
+            self.embedding_service.clear_cache()
+            logger.info("Performed final cleanup after document processing")
+            
             # Update status to done and set finished_at timestamp
             ingestion.status = "done"
             ingestion.finished_at = datetime.utcnow()
@@ -303,6 +312,18 @@ class IngestionService:
                 return None
         
         logger.info(f"Successfully processed all {total_chunks} chunks for dense document")
+        
+        # Final aggressive cleanup after dense document processing
+        import gc
+        for _ in range(3):  # Multiple aggressive passes
+            gc.collect()
+        
+        # Clear embedding cache to free memory
+        from app.services.embeddings import EmbeddingService
+        embedding_service = EmbeddingService()
+        embedding_service.clear_cache()
+        logger.info("Performed final cleanup after dense document processing")
+        
         return embeddings
 
     def _get_file_extension(self, mime_type: str) -> str:
