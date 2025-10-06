@@ -326,7 +326,7 @@ class QdrantService:
             True if successful
         """
         try:
-            # Try using indexed filtering first
+            # Try using indexed filtering first (only doc_id, filter method in Python)
             try:
                 results = self.client.scroll(
                     collection_name=self.collection_name,
@@ -335,17 +335,17 @@ class QdrantService:
                             {
                                 "key": "doc_id",
                                 "match": {"value": doc_id}
-                            },
-                            {
-                                "key": "method",
-                                "match": {"value": method}
                             }
                         ]
                     },
                     limit=10000  # Large limit to get all vectors for this document
                 )
                 
-                vector_ids = [vector.id for vector in results[0]]
+                # Filter by method in Python since we don't have method index
+                vector_ids = []
+                for vector in results[0]:
+                    if vector.payload and vector.payload.get('method') == method:
+                        vector_ids.append(vector.id)
                 
             except Exception as filter_error:
                 # If indexed filtering fails, try brute force approach
