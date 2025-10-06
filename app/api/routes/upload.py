@@ -221,12 +221,16 @@ async def delete_document(
         try:
             file_extension = _get_file_extension(document.mime)
             file_path = os.path.join(settings.storage_path, f"{document.sha256}.{file_extension}")
+            logger.info(f"Attempting to delete file: {file_path}")
+            
             if os.path.exists(file_path):
                 os.remove(file_path)
                 file_deleted = True
-                logger.info(f"Deleted physical file: {file_path}")
+                logger.info(f"Successfully deleted physical file: {file_path}")
+            else:
+                logger.warning(f"Physical file not found: {file_path}")
         except Exception as e:
-            logger.warning(f"Failed to delete physical file: {e}")
+            logger.error(f"Failed to delete physical file {file_path}: {e}")
         
         # Store document info before deletion
         doc_info = {
