@@ -5,8 +5,9 @@ import {
   Upload,
   Search,
   BarChart3,
-  User,
   LogOut,
+  ChevronDown,
+  Building2,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -87,27 +88,52 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center space-x-2 text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md px-3 py-2"
+                  className="flex items-center space-x-2 text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-xl px-3 py-2 transition-all duration-200 hover:bg-gray-50"
                 >
-                  <User size={20} />
-                  <span className="hidden md:block">{user?.email}</span>
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                    {user?.email?.charAt(0).toUpperCase()}
+                  </div>
+                  <span className="hidden md:block font-medium">
+                    {user?.email}
+                  </span>
+                  <ChevronDown
+                    size={16}
+                    className={`transition-transform duration-200 ${
+                      showUserMenu ? "rotate-180" : ""
+                    }`}
+                  />
                 </button>
 
                 {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-50">
-                    <div className="px-4 py-2 text-sm text-gray-700 border-b">
-                      <div className="font-medium">{user?.email}</div>
-                      <div className="text-xs text-gray-500">
-                        Organization ID: {user?.organization_id}
+                  <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 animate-in slide-in-from-top-2 duration-200">
+                    <div className="px-4 py-3 border-b border-gray-100">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-lg font-semibold">
+                          {user?.email?.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-semibold text-gray-900 truncate">
+                            {user?.email}
+                          </div>
+                          <div className="text-sm text-gray-500 flex items-center">
+                            <Building2 size={12} className="mr-1" />
+                            Org: {user?.organization_id}
+                          </div>
+                        </div>
                       </div>
                     </div>
-                    <button
-                      onClick={handleLogout}
-                      className="flex items-center space-x-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                    >
-                      <LogOut size={16} />
-                      <span>Logout</span>
-                    </button>
+                    <div className="py-1">
+                      <button
+                        onClick={handleLogout}
+                        className="flex items-center space-x-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors duration-200 group"
+                      >
+                        <LogOut
+                          size={16}
+                          className="group-hover:text-red-600"
+                        />
+                        <span className="font-medium">Sign out</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
