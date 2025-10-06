@@ -55,12 +55,83 @@ class QdrantService:
                         distance=Distance.COSINE
                     )
                 )
+                # Create indexes for payload fields to enable filtering
+                self._create_payload_indexes()
         except ConnectionError as e:
             self._is_available = False
             raise RuntimeError(f"Failed to connect to Qdrant: {str(e)}")
         except Exception as e:
             self._is_available = False
             raise RuntimeError(f"Failed to ensure collection exists: {str(e)}")
+    
+    def _create_payload_indexes(self):
+        """Create indexes for payload fields to enable filtering"""
+        if not self._is_available or self.client is None:
+            return
+            
+        try:
+            from qdrant_client.models import PayloadSchemaType, CreateFieldIndex
+            
+            # Create indexes only for fields actually used in filtering
+            payload_fields = [
+                ("doc_id", PayloadSchemaType.INTEGER),
+                ("hash", PayloadSchemaType.KEYWORD)
+            ]
+            
+            for field_name, field_type in payload_fields:
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self.collection_name,
+                        field_name=field_name,
+                        field_schema=field_type
+                    )
+                except Exception as e:
+                    # Index might already exist, which is fine
+                    if "already exists" not in str(e).lower():
+                        print(f"Warning: Failed to create index for {field_name}: {e}")
+                        
+        except Exception as e:
+            print(f"Warning: Failed to create payload indexes: {e}")
+    
+    def create_missing_indexes(self):
+        """Create missing indexes on existing collection"""
+        if not self._is_available or self.client is None:
+            return False
+            
+        try:
+            from qdrant_client.models import PayloadSchemaType
+            
+            # Create indexes only for fields actually used in filtering
+            payload_fields = [
+                ("doc_id", PayloadSchemaType.INTEGER),
+                ("hash", PayloadSchemaType.KEYWORD)
+            ]
+            
+            created_count = 0
+            for field_name, field_type in payload_fields:
+                try:
+                    self.client.create_payload_index(
+                        collection_name=self.collection_name,
+                        field_name=field_name,
+                        field_schema=field_type
+                    )
+                    created_count += 1
+                    print(f"Created index for {field_name}")
+                except Exception as e:
+                    # Index might already exist, which is fine
+                    if "already exists" not in str(e).lower():
+                        print(f"Warning: Failed to create index for {field_name}: {e}")
+            
+            if created_count > 0:
+                print(f"Successfully created {created_count} indexes")
+                return True
+            else:
+                print("All indexes already exist")
+                return True
+                
+        except Exception as e:
+            print(f"Failed to create missing indexes: {e}")
+            return False
     
     def is_available(self) -> bool:
         """Check if Qdrant service is available"""
@@ -169,25 +240,34 @@ class QdrantService:
             True if successful
         """
         try:
-            # Find vectors by hash and get their IDs
+            # Try using indexed filtering first
             vector_ids = []
             for hash_value in hashes:
-                # Search for vectors with this hash
-                results = self.client.scroll(
-                    collection_name=self.collection_name,
-                    scroll_filter={
-                        "must": [
-                            {
-                                "key": "hash",
-                                "match": {"value": hash_value}
-                            }
-                        ]
-                    },
-                    limit=1000
-                )
-                
-                for vector in results[0]:
-                    vector_ids.append(vector.id)
+                try:
+                    # Search for vectors with this hash using indexed filtering
+                    results = self.client.scroll(
+                        collection_name=self.collection_name,
+                        scroll_filter={
+                            "must": [
+                                {
+                                    "key": "hash",
+                                    "match": {"value": hash_value}
+                                }
+                            ]
+                        },
+                        limit=1000
+                    )
+                    
+                    for vector in results[0]:
+                        vector_ids.append(vector.id)
+                        
+                except Exception as filter_error:
+                    # If indexed filtering fails, try brute force approach
+                    if "Index required" in str(filter_error):
+                        print(f"Index not available for hash filtering, using brute force for hash: {hash_value}")
+                        vector_ids.extend(self._find_vectors_by_hash_brute_force(hash_value))
+                    else:
+                        raise filter_error
             
             # Delete found vectors
             if vector_ids:
@@ -201,6 +281,39 @@ class QdrantService:
         except Exception as e:
             raise RuntimeError(f"Failed to delete vectors by hash: {str(e)}")
     
+    def _find_vectors_by_hash_brute_force(self, hash_value: str) -> List[int]:
+        """
+        Find vectors by hash using brute force (scroll all vectors)
+        This is a fallback when indexes are not available
+        """
+        vector_ids = []
+        try:
+            # Scroll through all vectors and check payload
+            offset = None
+            while True:
+                results = self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=100,
+                    offset=offset
+                )
+                
+                vectors, next_offset = results
+                if not vectors:
+                    break
+                    
+                for vector in vectors:
+                    if vector.payload and vector.payload.get('hash') == hash_value:
+                        vector_ids.append(vector.id)
+                
+                if next_offset is None:
+                    break
+                offset = next_offset
+                
+        except Exception as e:
+            print(f"Warning: Brute force hash search failed: {e}")
+            
+        return vector_ids
+    
     def delete_vectors_by_doc_id(self, doc_id: int, method: int) -> bool:
         """
         Delete vectors by document ID and method
@@ -213,25 +326,34 @@ class QdrantService:
             True if successful
         """
         try:
-            # Find vectors by doc_id and method
-            results = self.client.scroll(
-                collection_name=self.collection_name,
-                scroll_filter={
-                    "must": [
-                        {
-                            "key": "doc_id",
-                            "match": {"value": doc_id}
-                        },
-                        {
-                            "key": "method",
-                            "match": {"value": method}
-                        }
-                    ]
-                },
-                limit=10000  # Large limit to get all vectors for this document
-            )
-            
-            vector_ids = [vector.id for vector in results[0]]
+            # Try using indexed filtering first
+            try:
+                results = self.client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter={
+                        "must": [
+                            {
+                                "key": "doc_id",
+                                "match": {"value": doc_id}
+                            },
+                            {
+                                "key": "method",
+                                "match": {"value": method}
+                            }
+                        ]
+                    },
+                    limit=10000  # Large limit to get all vectors for this document
+                )
+                
+                vector_ids = [vector.id for vector in results[0]]
+                
+            except Exception as filter_error:
+                # If indexed filtering fails, try brute force approach
+                if "Index required" in str(filter_error):
+                    print(f"Index not available for doc_id filtering, using brute force for doc_id: {doc_id}, method: {method}")
+                    vector_ids = self._find_vectors_by_doc_id_brute_force(doc_id, method)
+                else:
+                    raise filter_error
             
             # Delete found vectors
             if vector_ids:
@@ -244,6 +366,41 @@ class QdrantService:
             return True
         except Exception as e:
             raise RuntimeError(f"Failed to delete vectors by doc_id: {str(e)}")
+    
+    def _find_vectors_by_doc_id_brute_force(self, doc_id: int, method: int) -> List[int]:
+        """
+        Find vectors by doc_id and method using brute force (scroll all vectors)
+        This is a fallback when indexes are not available
+        """
+        vector_ids = []
+        try:
+            # Scroll through all vectors and check payload
+            offset = None
+            while True:
+                results = self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=100,
+                    offset=offset
+                )
+                
+                vectors, next_offset = results
+                if not vectors:
+                    break
+                    
+                for vector in vectors:
+                    if (vector.payload and 
+                        vector.payload.get('doc_id') == doc_id and 
+                        vector.payload.get('method') == method):
+                        vector_ids.append(vector.id)
+                
+                if next_offset is None:
+                    break
+                offset = next_offset
+                
+        except Exception as e:
+            print(f"Warning: Brute force doc_id search failed: {e}")
+            
+        return vector_ids
     
     def health_check(self) -> bool:
         """
