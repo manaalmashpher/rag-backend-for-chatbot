@@ -168,11 +168,15 @@ async def delete_document(
     db: Session = Depends(get_db)
 ):
     """
-    Delete a document and all related data from both SQLite and Qdrant
+    Delete a document and all related data from both PostgreSQL and Qdrant
     
     - **doc_id**: Document ID to delete
     """
     try:
+        import logging
+        import os
+        logger = logging.getLogger(__name__)
+        
         # Check if document exists
         document = db.query(Document).filter(Document.id == doc_id).first()
         if not document:
@@ -181,53 +185,100 @@ async def delete_document(
                 detail="Document not found"
             )
         
-        # Get chunk hashes before deleting for Qdrant cleanup
+        # Get all chunks and ingestions for this document
         chunks = db.query(Chunk).filter(Chunk.doc_id == doc_id).all()
-        chunk_hashes = [chunk.hash for chunk in chunks]
+        ingestions = db.query(Ingestion).filter(Ingestion.doc_id == doc_id).all()
         
-        # Delete from Qdrant using hash values
-        if chunk_hashes:
-            try:
-                qdrant_service = QdrantService()
-                # Find vectors by hash and delete them
-                qdrant_service.delete_vectors_by_hash(chunk_hashes)
-            except Exception as e:
-                # Log Qdrant deletion error but don't fail the entire operation
-                print(f"Warning: Failed to delete vectors from Qdrant: {e}")
+        logger.info(f"Deleting document {doc_id}: {len(chunks)} chunks, {len(ingestions)} ingestions")
+        
+        # Delete from Qdrant using doc_id (more efficient than hash lookup)
+        qdrant_vectors_deleted = 0
+        try:
+            qdrant_service = QdrantService()
+            if qdrant_service.is_available():
+                # Delete vectors for all methods used by this document
+                methods = list(set([ingestion.method for ingestion in ingestions]))
+                for method in methods:
+                    qdrant_service.delete_vectors_by_doc_id(doc_id, method)
+                    qdrant_vectors_deleted += len(chunks)  # Approximate count
+                logger.info(f"Deleted vectors from Qdrant for document {doc_id}")
+            else:
+                logger.warning("Qdrant service not available, skipping vector cleanup")
+        except Exception as e:
+            logger.warning(f"Failed to delete vectors from Qdrant: {e}")
+        
+        # Delete from PostgreSQL FTS index (PostgreSQL syntax)
+        try:
+            from sqlalchemy import text
+            # Delete from the FTS index if it exists
+            db.execute(text("""
+                DELETE FROM chunks_fts 
+                WHERE id IN (
+                    SELECT id FROM chunks WHERE doc_id = :doc_id
+                )
+            """), {"doc_id": doc_id})
+            logger.info(f"Deleted FTS entries for document {doc_id}")
+        except Exception as e:
+            logger.warning(f"Failed to delete FTS entries: {e}")
         
         # Delete chunks from database (due to foreign key constraints)
-        db.query(Chunk).filter(Chunk.doc_id == doc_id).delete()
+        chunks_deleted = db.query(Chunk).filter(Chunk.doc_id == doc_id).delete()
         
         # Delete ingestions
-        db.query(Ingestion).filter(Ingestion.doc_id == doc_id).delete()
+        ingestions_deleted = db.query(Ingestion).filter(Ingestion.doc_id == doc_id).delete()
         
-        # Delete from FTS5 index
-        from sqlalchemy import text
-        db.execute(text("DELETE FROM chunks_fts WHERE rowid IN (SELECT id FROM chunks WHERE doc_id = :doc_id)"), 
-                  {"doc_id": doc_id})
+        # Delete the physical file from storage
+        file_deleted = False
+        try:
+            file_extension = _get_file_extension(document.mime)
+            file_path = os.path.join(settings.storage_path, f"{document.sha256}.{file_extension}")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                file_deleted = True
+                logger.info(f"Deleted physical file: {file_path}")
+        except Exception as e:
+            logger.warning(f"Failed to delete physical file: {e}")
+        
+        # Store document info before deletion
+        doc_info = {
+            "id": document.id,
+            "title": document.title,
+            "mime": document.mime,
+            "sha256": document.sha256
+        }
         
         # Delete document
         db.delete(document)
         
         db.commit()
         
+        logger.info(f"Successfully deleted document {doc_id}")
+        
         return {
             "message": f"Document {doc_id} deleted successfully",
-            "deleted_document": {
-                "id": doc_id,
-                "title": document.title,
-                "mime": document.mime
-            },
+            "deleted_document": doc_info,
             "cleanup": {
-                "sqlite_chunks_deleted": len(chunk_hashes),
-                "qdrant_vectors_deleted": len(chunk_hashes),
-                "fts5_entries_deleted": len(chunk_hashes)
+                "postgresql_chunks_deleted": chunks_deleted,
+                "postgresql_ingestions_deleted": ingestions_deleted,
+                "qdrant_vectors_deleted": qdrant_vectors_deleted,
+                "physical_file_deleted": file_deleted
             }
         }
         
     except Exception as e:
         db.rollback()
+        logger.error(f"Failed to delete document {doc_id}: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to delete document: {str(e)}"
         )
+
+def _get_file_extension(mime_type: str) -> str:
+    """Get file extension from MIME type"""
+    mime_to_ext = {
+        'application/pdf': 'pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'text/plain': 'txt',
+        'text/markdown': 'md'
+    }
+    return mime_to_ext.get(mime_type, 'bin')
