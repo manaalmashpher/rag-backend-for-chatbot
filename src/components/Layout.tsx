@@ -71,11 +71,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                     <Link
                       key={item.name}
                       to={item.href}
-                      className={`flex items-center space-x-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      className={`flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors no-underline hover:no-underline ${
                         isActive
                           ? "bg-blue-100 text-blue-700"
                           : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
                       }`}
+                      style={{ textDecoration: "none" }}
                     >
                       <Icon size={16} />
                       <span>{item.name}</span>
@@ -88,7 +89,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="flex items-center space-x-2 text-gray-700 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-xl px-3 py-2 transition-all duration-200 hover:bg-gray-50"
+                  className={`flex items-center space-x-3 px-4 py-2 rounded-lg transition-all duration-200 focus:outline-none border-0 outline-none ring-0 ${
+                    showUserMenu
+                      ? "text-blue-700 hover:bg-gray-50"
+                      : "text-blue-700 hover:bg-gray-50"
+                  }`}
+                  style={{ border: "none", outline: "none" }}
                 >
                   <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
                     {user?.email?.charAt(0).toUpperCase()}
@@ -105,33 +111,47 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 </button>
 
                 {showUserMenu && (
-                  <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 animate-in slide-in-from-top-2 duration-200">
-                    <div className="px-4 py-3 border-b border-gray-100">
-                      <div className="flex items-center space-x-3">
+                  <div
+                    className="absolute right-0 mt-3 bg-white rounded-xl shadow-xl border border-gray-200 py-3 px-3 z-50 animate-in slide-in-from-top-2 duration-200"
+                    style={{
+                      width: "220px",
+                      minWidth: "220px",
+                      maxWidth: "220px",
+                    }}
+                  >
+                    <div className="flex items-start space-x-3 pt-2">
+                      <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center flex-shrink-0 px-3 pt-6 pb-4">
                         <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-lg font-semibold">
                           {user?.email?.charAt(0).toUpperCase()}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-semibold text-gray-900 truncate">
-                            {user?.email}
-                          </div>
-                          <div className="text-sm text-gray-500 flex items-center">
-                            <Building2 size={12} className="mr-1" />
-                            Org: {user?.organization_id}
-                          </div>
+                      </div>
+                      <div className="pt-5 pl-3 pr-6 py-4 flex-1">
+                        <div className="font-semibold text-gray-900 text-base mb-2 pt-2">
+                          {user?.email}
+                        </div>
+                        <div className="text-sm text-gray-500 flex items-center whitespace-nowrap">
+                          <Building2 size={14} className="mr-2 flex-shrink-0" />
+                          <span>Organization ID: {user?.organization_id}</span>
                         </div>
                       </div>
                     </div>
-                    <div className="py-1">
+                    <div className="py-2">
                       <button
                         onClick={handleLogout}
-                        className="flex items-center space-x-3 w-full px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors duration-200 group"
+                        className="flex items-center space-x-2 px-5 py-2 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors duration-200 group rounded-md border-0 outline-none mx-4"
+                        style={{
+                          border: "none",
+                          outline: "none",
+                          borderRadius: "6px",
+                          paddingLeft: "16px",
+                          paddingRight: "16px",
+                        }}
                       >
                         <LogOut
-                          size={16}
+                          size={18}
                           className="group-hover:text-red-600"
                         />
-                        <span className="font-medium">Sign out</span>
+                        <span>Sign Out</span>
                       </button>
                     </div>
                   </div>
