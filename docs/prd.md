@@ -45,8 +45,8 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 - **FR6. Ingestion**: Persist chunks + vectors to **Qdrant** with stable identifiers.
 - **FR7. Lexical index**: Build/maintain a **minimal lexical index** (e.g., BM25/FTS) per corpus to enable hybrid search.
 - **FR8. Hybrid query**: Provide a **search UI** that executes hybrid retrieval (semantic + lexical) and returns fused, ranked results with source attributions and chunk/method metadata.
-- **FR9. LLM Integration**: Integrate configurable LLM service to synthesize retrieved chunks into coherent, contextual answers.
-- **FR10. Answer Generation**: Generate natural language responses that directly address user queries using retrieved document chunks as context.
+- **FR9. LLM Integration**: ~~Integrate configurable LLM service to synthesize retrieved chunks into coherent, contextual answers.~~ **DEFERRED**
+- **FR10. Answer Generation**: ~~Generate natural language responses that directly address user queries using retrieved document chunks as context.~~ **DEFERRED**
 - **FR11. Auth**: **Email + password** authentication; single-tenant org scope.
 - **FR12. Status & observability**: Show **ingestion status** (per document + per method) and log basic pipeline events; allow **CSV export** of evaluation metrics/logs.
 - **FR13. (Removed — out of scope for MVP) Evaluation harness (seed set)**.
@@ -55,14 +55,14 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 ### Non-Functional Requirements (NFR)
 
 - **NFR1. Performance**: **Hybrid query** typical latency meets targets; **answer generation** p95 ≤ 3s; graceful degradation options documented.
-- **NFR2. Reliability**: Low error rate; clear ingest status and error surfaces; retries/backoff; **LLM service fallback** to raw results on failure.
-- **NFR3. Maintainability**: Configuration via environment/deploy-time files (embedding model, Qdrant endpoint, fusion weights, **LLM provider/model**); no runtime tuning UI in MVP.
+- **NFR2. Reliability**: Low error rate; clear ingest status and error surfaces; retries/backoff; ~~**LLM service fallback** to raw results on failure.~~ **DEFERRED**
+- **NFR3. Maintainability**: Configuration via environment/deploy-time files (embedding model, Qdrant endpoint, fusion weights, ~~**LLM provider/model**~~); no runtime tuning UI in MVP.
 - **NFR4. Security (MVP)**: HTTPS; store credentials securely; **RBAC/SSO and advanced hardening are out of scope**.
 - **NFR5. Compatibility**: Handle listed file types; **no OCR**; clearly surface unsupported inputs and fallbacks.
 - **NFR6. Data residency**: **No regional residency constraints** in MVP.
 - **NFR7. Tenancy**: **Single-tenant** deployment; org-scoped data separation without multi-tenant UX.
 - **NFR8. Observability**: Basic logs for ingest/query; optional **CSV** export of metrics; no dashboards.
-- **NFR9. Quality Targets**: On seed set, initial targets: **Q1 ≥ 0.70**, **Q2 ≥ 0.85**, **Q3 ≥ 3/5**; **answer relevance ≥ 4/5**; if unmet, create mitigation backlog.
+- **NFR9. Quality Targets**: On seed set, initial targets: **Q1 ≥ 0.70**, **Q2 ≥ 0.85**, **Q3 ≥ 3/5**; ~~**answer relevance ≥ 4/5**~~; if unmet, create mitigation backlog.
 - **NFR10. Scalability (MVP)**: Light concurrency (single-digit users); design does not preclude future scaling.
 
 ---
@@ -80,12 +80,14 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 
 ## MVP Scope
 
+**Note:** LLM integration (Epic 9) has been deferred for future implementation. The MVP will provide raw search results with source attributions instead of synthesized answers.
+
 ### Core Features (Must Have)
 
 - End-to-end pipeline: **Upload → Preprocess → Embed → Ingest (Qdrant)**.
 - **Chunking method selection** from fixed list at upload time.
 - **Hybrid search** (semantic + lexical) with fused ranking and source attributions.
-- **LLM integration** for answer synthesis from retrieved chunks.
+- ~~**LLM integration** for answer synthesis from retrieved chunks.~~ **DEFERRED**
 - **Email/password auth** and **single-tenant** deployment.
 - **Status visibility** for ingestion and simple **logs/CSV** export.
 
@@ -101,17 +103,17 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 
 ### MVP Success Criteria
 
-- **Quality**: Hit@5 ≥ 0.70; Hit@10 ≥ 0.85; Median human relevance ≥ 3/5 on seed set; **Answer relevance ≥ 4/5**.
-- **Performance**: p95 ≤ 1.5s; p99 ≤ 3.0s; **Answer generation p95 ≤ 3s**.
+- **Quality**: Hit@5 ≥ 0.70; Hit@10 ≥ 0.85; Median human relevance ≥ 3/5 on seed set; ~~**Answer relevance ≥ 4/5**~~.
+- **Performance**: p95 ≤ 1.5s; p99 ≤ 3.0s; ~~**Answer generation p95 ≤ 3s**~~.
 - **Ingestion**: 200–300 pages ≤ 20 min.
 
 ---
 
 ## Success Metrics
 
-- **Quality**: **Q1 ≥ 0.70**, **Q2 ≥ 0.85**, **Q3 ≥ 3/5** on seed set; **Answer relevance ≥ 4/5**.
-- **Performance**: **Hybrid query latency p95 ≤ 1.5s, p99 ≤ 3.0s; answer generation p95 ≤ 3s; ingestion throughput (200–300 pages) ≤ 20 min.**
-- **Reliability**: Meaningful error messages for blocked inputs and failed steps; **LLM service fallback** to raw results.
+- **Quality**: **Q1 ≥ 0.70**, **Q2 ≥ 0.85**, **Q3 ≥ 3/5** on seed set; ~~**Answer relevance ≥ 4/5**~~.
+- **Performance**: **Hybrid query latency p95 ≤ 1.5s, p99 ≤ 3.0s; ~~answer generation p95 ≤ 3s~~; ingestion throughput (200–300 pages) ≤ 20 min.**
+- **Reliability**: Meaningful error messages for blocked inputs and failed steps; ~~**LLM service fallback** to raw results.~~ **DEFERRED**
 - **Usability**: Testers complete upload→ingest→query→answer flow without assistance.
 
 ---
@@ -128,7 +130,7 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 
 - **Vector DB**: **Qdrant**.
 - **Search**: **Hybrid** (semantic + keyword) with cosine similarity; include **minimal lexical index** (BM25/FTS).
-- **LLM**: **Configurable provider** (OpenAI, Anthropic, local models) with environment-based configuration.
+- **LLM**: ~~**Configurable provider** (OpenAI, Anthropic, local models) with environment-based configuration.~~ **DEFERRED**
 - **Auth**: Email + password (MVP).
 - **Hosting**: **SaaS**, single-tenant per deployment.
 
@@ -136,8 +138,8 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 
 - **Repository**: Simple mono or polyrepo acceptable; keep config-driven.
 - **Service Architecture**: Minimal services sufficient for MVP; avoid premature microservices.
-- **Integration Requirements**: Stable IDs for chunks; ingest + lexical index jobs; **LLM service integration**.
-- **Security/Compliance**: HTTPS; credential hygiene; **LLM API key management**; defer enterprise controls post-MVP.
+- **Integration Requirements**: Stable IDs for chunks; ingest + lexical index jobs; ~~**LLM service integration**.~~ **DEFERRED**
+- **Security/Compliance**: HTTPS; credential hygiene; ~~**LLM API key management**~~; defer enterprise controls post-MVP.
 
 ---
 
@@ -149,7 +151,7 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 - **A4. Chunking methods**: Fixed list (no runtime tuning); defaults documented.
 - **A5. Fusion**: Default weights (e.g., semantic 0.6 / lexical 0.4) and Top‑K defined via config.
 - **A6. Embeddings**: Provider/model set via environment; at least one viable model available.
-- **A7. LLM Integration**: Provider/model configurable via environment; fallback to raw results on failure.
+- **A7. LLM Integration**: ~~Provider/model configurable via environment; fallback to raw results on failure.~~ **DEFERRED**
 - **A8. Deployment**: SaaS, single-tenant; light concurrency.
 - **A9. Observability**: Logs and optional CSV exports; no dashboards.
 - **A10. Data residency**: Not required for MVP.
@@ -165,8 +167,8 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 - **R2. Tokenizer mismatch** between libs can skew chunk sizing; mitigation: standardize tokenizer + version pinning.
 - **R3. Resource spikes** under fused queries; mitigation: cap batch sizes; profile and cache hot results.
 - **R4. Evaluation subjectivity** for Q3; mitigation: simple rubric + double-rater subset.
-- **R5. LLM response quality** may vary; mitigation: implement quality validation and fallback to raw results.
-- **R6. LLM API reliability** could impact user experience; mitigation: robust error handling and graceful degradation.
+- **R5. LLM response quality** may vary; mitigation: implement quality validation and fallback to raw results. **DEFERRED**
+- **R6. LLM API reliability** could impact user experience; mitigation: robust error handling and graceful degradation. **DEFERRED**
 
 ### Open Questions
 
@@ -174,8 +176,8 @@ This MVP is a lean, test-focused application to prove ingestion + retrieval qual
 2. Confirm initial **embedding model/provider** and dimension.
 3. Agree on **Top‑K** and fusion weight defaults.
 4. Define minimal **log fields** and CSV schema for evaluation outputs.
-5. Confirm **LLM provider/model** selection and configuration approach.
-6. Define **answer quality metrics** and validation criteria.
+5. ~~Confirm **LLM provider/model** selection and configuration approach.~~ **DEFERRED**
+6. ~~Define **answer quality metrics** and validation criteria.~~ **DEFERRED**
 
 ---
 

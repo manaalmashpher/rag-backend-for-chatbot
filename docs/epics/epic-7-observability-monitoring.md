@@ -1,5 +1,9 @@
 # Epic 7: Observability & Monitoring
 
+## Status
+
+**Deferred to Future Release** - Not needed for current MVP focus
+
 ## Epic Overview
 
 Implement comprehensive logging, monitoring, and observability features to support system debugging, performance monitoring, and evaluation.
@@ -56,8 +60,15 @@ Implement comprehensive logging, monitoring, and observability features to suppo
 
 ## Priority
 
-Medium - Important for MVP but not blocking
+**Deferred** - Not needed for current MVP focus. Will be reconsidered for future releases.
 
 ## Estimated Effort
 
 Medium (5-8 story points)
+
+## Deferral Notes
+
+**Deferred Date**: 2025-10-23  
+**Reason**: Not needed for current MVP focus. Core infrastructure and functionality take priority.  
+**Future Consideration**: Will be re-evaluated for post-MVP releases when monitoring becomes critical for production operations.  
+**Dependencies**: No blocking dependencies for other epics.

@@ -363,7 +363,9 @@ CREATE INDEX IF NOT EXISTS idx_chunks_tsv ON chunks USING GIN(tsv);
 
 ---
 
-## 14) LLM Integration Architecture
+## 14) LLM Integration Architecture ⏳ DEFERRED
+
+**Status:** This section describes planned LLM integration that has been deferred for future implementation.
 
 ### 14.1 Service Design
 

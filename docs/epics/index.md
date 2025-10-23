@@ -52,10 +52,11 @@ This directory contains the epic definitions extracted from the PRD and architec
    - Priority: High
    - Effort: Large (8-13 story points)
 
-9. **[Epic 9: LLM Integration](./epic-9-llm-integration.md)**
+9. **[Epic 9: LLM Integration](./epic-9-llm-integration.md)** ⏳ **DEFERRED**
    - LLM service integration for answer synthesis
-   - Priority: High
+   - Priority: Deferred
    - Effort: Medium (5-8 story points)
+   - **Status**: Deferred for future implementation
 
 ## Epic Dependencies
 

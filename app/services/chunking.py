@@ -1,57 +1,145 @@
 """
 Chunking methods implementation
+
+This module provides a comprehensive chunking service that implements 8 different
+document chunking strategies for optimal text segmentation based on content type
+and user requirements.
+
+Chunking Methods:
+1. Fixed-size chunking with overlap
+2. Sentence boundary chunking
+3. Paragraph boundary chunking
+4. Semantic similarity-driven chunking
+5. Sliding window chunking
+6. Recursive character/token splitter
+7. Topic-based chunking (Markdown/HTML)
+8. Adaptive content-aware chunking
 """
 
 from typing import List, Dict, Any
 import hashlib
 import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ChunkingService:
     """
-    Implements the 8 predefined chunking methods
+    Implements the 8 predefined chunking methods for document text segmentation.
+    
+    This service provides various chunking strategies optimized for different
+    document types and use cases. Each method produces chunks with consistent
+    metadata including method ID, chunk index, hash, and optional page information.
+    
+    Features:
+    - 8 different chunking algorithms
+    - Dense document handling with automatic size adjustment
+    - Page information support for PDF documents
+    - Consistent metadata tracking
+    - Error handling and validation
+    
+    Example:
+        service = ChunkingService()
+        chunks = service.chunk_text(text, method=1, chunk_size=1000, overlap=100)
+        chunks_with_pages = service.chunk_text_with_pages(text, method=2, pages=page_list)
     """
     
     def chunk_text(self, text: str, method: int, **kwargs) -> List[Dict[str, Any]]:
         """
-        Apply specified chunking method to text
+        Apply specified chunking method to text.
+        
+        This is the main entry point for text chunking. It automatically handles
+        dense documents by adjusting chunk sizes and applies the selected
+        chunking method with appropriate parameters.
         
         Args:
-            text: Input text to chunk
-            method: Chunking method (1-8)
+            text (str): Input text to chunk
+            method (int): Chunking method ID (1-8)
+                - 1: Fixed-size chunking with overlap
+                - 2: Sentence boundary chunking
+                - 3: Paragraph boundary chunking
+                - 4: Semantic similarity-driven chunking
+                - 5: Sliding window chunking
+                - 6: Recursive character/token splitter
+                - 7: Topic-based chunking (Markdown/HTML)
+                - 8: Adaptive content-aware chunking
             **kwargs: Additional parameters for specific methods
+                - chunk_size (int): Size for fixed-size methods (default: 1000)
+                - overlap (int): Overlap for fixed-size methods (default: 100)
+                - max_chunk_size (int): Maximum size for boundary methods
+                - window_size (int): Window size for sliding window
+                - step_size (int): Step size for sliding window
+                - base_chunk_size (int): Base size for adaptive method
         
         Returns:
-            List of chunk dictionaries with text, metadata, etc.
+            List[Dict[str, Any]]: List of chunk dictionaries with:
+                - text (str): Chunk text content
+                - method (int): Chunking method used
+                - chunk_index (int): Index of chunk in sequence
+                - hash (str): SHA256 hash of chunk content (first 16 chars)
+                - start_char (int): Starting character position (if applicable)
+                - end_char (int): Ending character position (if applicable)
+                - page_from (int): Starting page number (if pages provided)
+                - page_to (int): Ending page number (if pages provided)
+        
+        Raises:
+            ValueError: If method is not in range 1-8
+        
+        Example:
+            service = ChunkingService()
+            chunks = service.chunk_text("Sample text", method=1, chunk_size=500, overlap=50)
         """
+        # Log chunking operation start
+        logger.info(f"Starting chunking operation: method={method}, text_length={len(text)}")
+        
         # Check if this is a dense document (like markdown) and adjust method
         is_dense = len(text) > 10000 or text.count('\n') > 1000
         if is_dense and method in [1, 2, 3]:  # For fixed-size, sentence, or paragraph methods
+            logger.info(f"Dense document detected, adjusting chunk sizes for method {method}")
             # Use much larger chunk sizes for dense documents to reduce total chunks
             if method == 1:
-                return self._method_1_fixed_size(text, chunk_size=3000, overlap=300, **kwargs)
+                result = self._method_1_fixed_size(text, chunk_size=3000, overlap=300, **kwargs)
             elif method == 2:
-                return self._method_2_sentence_boundary(text, max_chunk_size=3000, **kwargs)
+                result = self._method_2_sentence_boundary(text, max_chunk_size=3000, **kwargs)
             elif method == 3:
-                return self._method_3_paragraph_boundary(text, max_chunk_size=3500, **kwargs)
+                result = self._method_3_paragraph_boundary(text, max_chunk_size=3500, **kwargs)
+            logger.info(f"Chunking completed: {len(result)} chunks generated")
+            return result
         
-        if method == 1:
-            return self._method_1_fixed_size(text, **kwargs)
-        elif method == 2:
-            return self._method_2_sentence_boundary(text, **kwargs)
-        elif method == 3:
-            return self._method_3_paragraph_boundary(text, **kwargs)
-        elif method == 4:
-            return self._method_4_semantic_similarity(text, **kwargs)
-        elif method == 5:
-            return self._method_5_sliding_window(text, **kwargs)
-        elif method == 6:
-            return self._method_6_recursive_split(text, **kwargs)
-        elif method == 7:
-            return self._method_7_topic_based(text, **kwargs)
-        elif method == 8:
-            return self._method_8_adaptive(text, **kwargs)
-        else:
-            raise ValueError(f"Invalid chunking method: {method}")
+        # Apply the selected chunking method
+        import time
+        start_time = time.time()
+        
+        try:
+            if method == 1:
+                result = self._method_1_fixed_size(text, **kwargs)
+            elif method == 2:
+                result = self._method_2_sentence_boundary(text, **kwargs)
+            elif method == 3:
+                result = self._method_3_paragraph_boundary(text, **kwargs)
+            elif method == 4:
+                result = self._method_4_semantic_similarity(text, **kwargs)
+            elif method == 5:
+                result = self._method_5_sliding_window(text, **kwargs)
+            elif method == 6:
+                result = self._method_6_recursive_split(text, **kwargs)
+            elif method == 7:
+                result = self._method_7_topic_based(text, **kwargs)
+            elif method == 8:
+                result = self._method_8_adaptive(text, **kwargs)
+            else:
+                raise ValueError(f"Invalid chunking method: {method}")
+            
+            # Log performance metrics
+            end_time = time.time()
+            processing_time = end_time - start_time
+            logger.info(f"Chunking completed: method={method}, chunks={len(result)}, time={processing_time:.3f}s")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Chunking failed: method={method}, error={str(e)}")
+            raise
     
     def chunk_text_with_pages(self, text: str, method: int, pages: List[Dict[str, Any]], **kwargs) -> List[Dict[str, Any]]:
         """
@@ -120,7 +208,24 @@ class ChunkingService:
         }
     
     def _method_1_fixed_size(self, text: str, chunk_size: int = 1000, overlap: int = 100) -> List[Dict[str, Any]]:
-        """Fixed-size chunking with overlap"""
+        """
+        Fixed-size chunking with overlap.
+        
+        This method splits text into fixed-size chunks with configurable overlap
+        to ensure continuity between chunks. It's ideal for documents where
+        semantic boundaries are not important and consistent chunk sizes are needed.
+        
+        Args:
+            text (str): Input text to chunk
+            chunk_size (int): Size of each chunk in characters (default: 1000)
+            overlap (int): Number of characters to overlap between chunks (default: 100)
+        
+        Returns:
+            List[Dict[str, Any]]: List of chunk dictionaries with fixed-size text segments
+        
+        Example:
+            chunks = service._method_1_fixed_size("Long text...", chunk_size=500, overlap=50)
+        """
         chunks = []
         start = 0
         
@@ -142,7 +247,23 @@ class ChunkingService:
         return chunks
     
     def _method_2_sentence_boundary(self, text: str, max_chunk_size: int = 1000) -> List[Dict[str, Any]]:
-        """Sentence boundary chunking"""
+        """
+        Sentence boundary chunking.
+        
+        This method splits text at sentence boundaries while respecting maximum
+        chunk size limits. It's ideal for documents where sentence-level
+        coherence is important for retrieval and understanding.
+        
+        Args:
+            text (str): Input text to chunk
+            max_chunk_size (int): Maximum size of each chunk in characters (default: 1000)
+        
+        Returns:
+            List[Dict[str, Any]]: List of chunk dictionaries with sentence-boundary text segments
+        
+        Example:
+            chunks = service._method_2_sentence_boundary("Text with sentences.", max_chunk_size=500)
+        """
         sentences = re.split(r'(?<=[.!?])\s+', text)
         chunks = []
         current_chunk = ""
@@ -173,7 +294,23 @@ class ChunkingService:
         return chunks
     
     def _method_3_paragraph_boundary(self, text: str, max_chunk_size: int = 1500) -> List[Dict[str, Any]]:
-        """Paragraph boundary chunking"""
+        """
+        Paragraph boundary chunking.
+        
+        This method splits text at paragraph boundaries while respecting maximum
+        chunk size limits. It's ideal for documents with clear paragraph structure
+        where paragraph-level coherence is important.
+        
+        Args:
+            text (str): Input text to chunk
+            max_chunk_size (int): Maximum size of each chunk in characters (default: 1500)
+        
+        Returns:
+            List[Dict[str, Any]]: List of chunk dictionaries with paragraph-boundary text segments
+        
+        Example:
+            chunks = service._method_3_paragraph_boundary("Text with paragraphs.", max_chunk_size=800)
+        """
         paragraphs = text.split('\n\n')
         chunks = []
         current_chunk = ""

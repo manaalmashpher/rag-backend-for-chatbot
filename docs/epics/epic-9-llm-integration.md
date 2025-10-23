@@ -1,5 +1,12 @@
 # Epic 9: LLM Integration - Brownfield Enhancement
 
+## ⚠️ DEFERRAL NOTICE
+
+**Status:** DEFERRED as of 2025-10-23
+**Rationale:** Epic 9 is an enhancement feature that can be deferred without impacting core MVP functionality. The hybrid search system (Epic 2) provides essential search capability, and LLM integration can be added in a future iteration.
+
+**Impact:** Users will receive raw search results instead of synthesized answers. Core MVP functionality remains intact.
+
 ## Epic Goal
 
 Integrate a Large Language Model (LLM) into the existing RAG system to transform raw search results into coherent, contextual answers, providing users with direct responses instead of requiring manual interpretation of retrieved chunks.
