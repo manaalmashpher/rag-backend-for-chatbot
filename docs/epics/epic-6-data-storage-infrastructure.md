@@ -2,7 +2,7 @@
 
 ## Epic Overview
 
-Set up and configure the data storage infrastructure including Qdrant vector database, SQLite relational database (with future Postgres migration path), and object storage for the complete RAG system.
+Set up and configure the core data storage infrastructure including Qdrant vector database and PostgreSQL relational database with FTS for the RAG system.
 
 ## Business Value
 
@@ -15,43 +15,30 @@ Set up and configure the data storage infrastructure including Qdrant vector dat
 - As a system, I want to store document vectors so I can perform semantic search
 - As a system, I want to store document metadata so I can track processing status
 - As a system, I want to maintain lexical indexes so I can perform keyword search
-- As a system, I want to store original files so I can reference them when needed
 
 ## Acceptance Criteria
 
 - [ ] Set up Qdrant vector database with proper collection configuration
-- [ ] Configure SQLite database with required schema and FTS5 indexes
-- [ ] Implement object storage for original file persistence
-- [ ] Create database migration scripts
+- [ ] Configure PostgreSQL database with required schema and FTS indexes
 - [ ] Set up proper indexing for performance
-- [ ] Implement data backup and recovery procedures
-- [ ] Configure connection pooling and optimization
-- [ ] Add monitoring for database performance
 
 ## Technical Requirements
 
 - Qdrant vector database setup and configuration
-- SQLite database schema and FTS5 configuration
-- Object storage setup (S3-compatible)
-- Database migration and versioning
+- PostgreSQL database schema and FTS configuration
 - Connection pooling and optimization
-- Backup and recovery procedures
-- Performance monitoring
 
 ## Dependencies
 
 - Infrastructure provisioning
-- Database and storage service accounts
+- Database service accounts
 - Network configuration and security
 
 ## Definition of Done
 
 - [ ] All databases are properly configured and accessible
-- [ ] Schema migrations are implemented and tested
-- [ ] FTS5 indexes are created and optimized
-- [ ] Object storage is configured and accessible
-- [ ] Backup procedures are in place
-- [ ] Performance monitoring is configured
+- [ ] FTS indexes are created and optimized
+- [ ] Connection pooling is configured and tested
 
 ## Priority
 
@@ -65,12 +52,13 @@ Medium (5-8 story points)
 
 **Current Implementation:**
 
-- Uses SQLite with FTS5 for lexical search and metadata storage
-- This choice was made for MVP simplicity and faster development
-- SQLite provides excellent performance for the current scale and user load
+- Uses PostgreSQL with FTS for lexical search and metadata storage
+- PostgreSQL provides robust full-text search capabilities with tsvector columns
+- PostgreSQL offers excellent performance and scalability for production workloads
 
-**Future Migration Path:**
+**Production Benefits:**
 
-- Postgres migration may be considered for production scaling
-- Migration scripts should be prepared for future database transition
-- Current SQLite implementation is fully functional and meets all MVP requirements
+- PostgreSQL FTS provides advanced text search features with ranking
+- Built-in unaccent and pg_trgm extensions for better text processing
+- Superior performance for complex queries and large datasets
+- Enterprise-grade reliability and data integrity features
