@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     fuse_sem_weight: float = 0.6  # Semantic search weight
     fuse_lex_weight: float = 0.4  # Lexical search weight
     
+    # Reranking Configuration
+    rerank_top_k: int = 50  # Number of candidates to rerank
+    rerank_top_r: int = 10  # Number of final reranked results
+    rerank_batch_size: int = 16  # Batch size for processing
+    rerank_max_chars: int = 2000  # Maximum characters per text for memory management
+    
     # Authentication Configuration
     secret_key: str = "your-secret-key-change-in-production"
     algorithm: str = "HS256"

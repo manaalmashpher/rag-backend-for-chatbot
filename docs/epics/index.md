@@ -40,11 +40,12 @@ This directory contains the epic definitions extracted from the PRD and architec
    - Priority: High
    - Effort: Medium (5-8 story points)
 
-7. **[Epic 7: Observability & Monitoring](./epic-7-observability-monitoring.md)**
+7. **[Epic 7: Observability & Monitoring](./epic-7-observability-monitoring.md)** ⏳ **DEFERRED**
 
    - Logging, monitoring, and evaluation features
-   - Priority: Medium
+   - Priority: Deferred
    - Effort: Medium (5-8 story points)
+   - **Status**: Deferred for future implementation
 
 8. **[Epic 8: Chunking Methods Implementation](./epic-8-chunking-methods-implementation.md)**
 
@@ -53,10 +54,17 @@ This directory contains the epic definitions extracted from the PRD and architec
    - Effort: Large (8-13 story points)
 
 9. **[Epic 9: LLM Integration](./epic-9-llm-integration.md)** ⏳ **DEFERRED**
+
    - LLM service integration for answer synthesis
    - Priority: Deferred
    - Effort: Medium (5-8 story points)
    - **Status**: Deferred for future implementation
+
+10. **[Epic 10: Reranking Feature](./epic-10-reranking-feature.md)**
+
+- Cross-encoder reranking for improved search quality
+- Priority: Medium
+- Effort: Medium (4-7 story points)
 
 ## Epic Dependencies
 
@@ -72,8 +80,9 @@ graph TD
     F --> B
     C --> I[Epic 9: LLM Integration]
     I --> E
+    C --> J[Epic 10: Reranking]
+    J --> E
     D --> G[Epic 4: Authentication]
-    D --> H[Epic 7: Observability]
 ```
 
 ## Success Criteria

@@ -155,9 +155,14 @@ class QdrantService:
             
         try:
             points = []
-            for i, (vector, payload) in enumerate(zip(vectors, payloads)):
+            for vector, payload in zip(vectors, payloads):
+                # Use chunk_id from payload as the unique point ID
+                chunk_id = payload.get('chunk_id')
+                if chunk_id is None:
+                    raise ValueError("Payload must contain 'chunk_id' for unique point identification")
+                
                 point = PointStruct(
-                    id=i,  # Simple ID for now, should be more sophisticated
+                    id=chunk_id,
                     vector=vector,
                     payload=payload
                 )

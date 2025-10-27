@@ -64,11 +64,25 @@ class IngestionService:
             
             # Load file content
             file_path = os.path.join(settings.storage_path, f"{document.sha256}.{self._get_file_extension(document.mime)}")
+            logger.info(f"Looking for file: {file_path}")
+            logger.info(f"Storage path: {settings.storage_path}")
+            logger.info(f"Storage path exists: {os.path.exists(settings.storage_path)}")
+            
             if not os.path.exists(file_path):
+                # List what's actually in the directory
+                try:
+                    if os.path.exists(settings.storage_path):
+                        all_files = os.listdir(settings.storage_path)
+                        logger.warning(f"Files in storage directory: {all_files}")
+                except Exception as e:
+                    logger.error(f"Failed to list directory: {e}")
+                
                 ingestion.status = "failed"
-                ingestion.error = "File not found in storage"
+                ingestion.error = f"File not found in storage: {file_path}"
                 db.commit()
                 return False
+            
+            logger.info(f"File found and ready to load")
             
             with open(file_path, 'rb') as f:
                 file_content = f.read()

@@ -51,11 +51,44 @@ class DatabaseInitService:
             db.close()
     
     @staticmethod
+    def ensure_schema_columns():
+        """
+        Ensure all required schema columns exist (for existing databases)
+        """
+        try:
+            db = next(get_db())
+            
+            # Check if we're using PostgreSQL
+            if not settings.database_url.startswith('postgresql://'):
+                logger.info("Not using PostgreSQL, skipping schema column checks")
+                db.close()
+                return
+            
+            # Add retry_count column to ingestions if it doesn't exist
+            try:
+                db.execute(text("""
+                    ALTER TABLE ingestions 
+                    ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0
+                """))
+                db.commit()
+                logger.info("Ensured retry_count column exists in ingestions table")
+            except Exception as e:
+                logger.debug(f"retry_count column check: {str(e)}")
+                # Column might already exist, that's fine
+            
+            db.close()
+            
+        except Exception as e:
+            logger.error(f"Failed to ensure schema columns: {str(e)}")
+            logger.warning("Continuing without schema updates")
+    
+    @staticmethod
     def initialize_search_infrastructure():
         """
         Initialize PostgreSQL search infrastructure
         """
         try:
+            DatabaseInitService.ensure_schema_columns()
             DatabaseInitService.ensure_fulltext_indexes()
             logger.info("PostgreSQL search infrastructure initialized successfully")
         except Exception as e:

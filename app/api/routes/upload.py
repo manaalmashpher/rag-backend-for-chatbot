@@ -195,15 +195,25 @@ async def delete_document(
         qdrant_vectors_deleted = 0
         try:
             qdrant_service = QdrantService()
-            if qdrant_service.is_available() and chunks:
-                # Delete vectors for all methods used by this document
-                methods = list(set([ingestion.method for ingestion in ingestions]))
-                for method in methods:
-                    qdrant_service.delete_vectors_by_doc_id(doc_id, method)
-                    qdrant_vectors_deleted += len(chunks)  # Approximate count
-                logger.info(f"Deleted vectors from Qdrant for document {doc_id}")
+            if qdrant_service.is_available():
+                if chunks:
+                    # Get methods from chunks (more reliable than ingestions)
+                    methods = list(set([chunk.method for chunk in chunks]))
+                    logger.info(f"Deleting vectors for methods: {methods}")
+                    
+                    for method in methods:
+                        try:
+                            qdrant_service.delete_vectors_by_doc_id(doc_id, method)
+                            qdrant_vectors_deleted += len(chunks)  # Approximate count
+                            logger.info(f"Successfully deleted vectors for document {doc_id}, method {method}")
+                        except Exception as method_error:
+                            logger.warning(f"Failed to delete vectors for method {method}: {method_error}")
+                            # Continue with other methods even if one fails
+                    logger.info(f"Completed Qdrant deletion for document {doc_id}")
+                else:
+                    logger.warning(f"No chunks found for document {doc_id}, skipping Qdrant deletion")
             else:
-                logger.warning("Qdrant service not available or no chunks to delete")
+                logger.warning(f"Qdrant service not available")
         except Exception as e:
             logger.warning(f"Failed to delete vectors from Qdrant: {e}")
         
@@ -258,9 +268,13 @@ async def delete_document(
             }
         }
         
+    except HTTPException:
+        # Re-raise HTTPExceptions (like 404)
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Failed to delete document {doc_id}: {str(e)}")
+        logger.exception("Full exception trace:")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to delete document: {str(e)}"

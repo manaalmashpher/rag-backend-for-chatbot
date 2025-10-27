@@ -50,6 +50,7 @@ class SearchResult(BaseModel):
     snippet: Optional[str] = Field(None, description="Text snippet with highlighting")
     score: float = Field(..., ge=0.0, le=1.0, description="Relevance score")
     search_type: str = Field(..., description="Type of search (semantic/lexical/hybrid)")
+    rerank_score: Optional[float] = Field(None, description="Rerank score from cross-encoder model")
 
 class SearchMetadata(BaseModel):
     """Search metadata schema"""

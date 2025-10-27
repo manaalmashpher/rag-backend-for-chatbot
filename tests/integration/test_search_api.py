@@ -36,8 +36,8 @@ class TestSearchAPI:
             'individual_results': {'semantic': 1, 'lexical': 1}
         }
         
-        # Make API call
-        response = client.get("/api/search?q=test query&limit=10")
+        # Make API call with unique query to avoid cache hits
+        response = client.get("/api/search?q=unique_test_query_123&limit=10")
         
         # Verify response
         assert response.status_code == 200
@@ -46,8 +46,9 @@ class TestSearchAPI:
         assert 'total_results' in data
         assert 'query' in data
         assert 'search_type' in data
-        assert data['query'] == 'test query'
-        assert data['search_type'] == 'hybrid'
+        assert data['query'] == 'unique_test_query_123'
+        # search_type can be 'hybrid' or 'hybrid-reranked' depending on reranking availability
+        assert data['search_type'] in ['hybrid', 'hybrid-reranked']
         assert len(data['results']) == 1
         assert data['results'][0]['chunk_id'] == 'ch_00001'
     
@@ -75,8 +76,8 @@ class TestSearchAPI:
         # Setup mock to raise exception
         mock_search_service.search_with_metadata.side_effect = Exception("Search service error")
         
-        # Make API call
-        response = client.get("/api/search?q=test query")
+        # Make API call with unique query to avoid cache hits
+        response = client.get("/api/search?q=unique_error_test_456")
         
         # Verify error response
         assert response.status_code == 500
@@ -95,8 +96,8 @@ class TestSearchAPI:
             'individual_results': {'semantic': 0, 'lexical': 0}
         }
         
-        # Make API call
-        response = client.get("/api/search?q=test query")
+        # Make API call with unique query to avoid cache hits
+        response = client.get("/api/search?q=unique_empty_test_789")
         
         # Verify response
         assert response.status_code == 200
@@ -115,8 +116,8 @@ class TestSearchAPI:
             'individual_results': {'semantic': 5, 'lexical': 3}
         }
         
-        # Make API call
-        response = client.get("/api/search?q=test query&limit=10")
+        # Make API call with unique query to avoid cache hits
+        response = client.get("/api/search?q=unique_metadata_test_101&limit=10")
         
         # Verify response includes metadata
         assert response.status_code == 200

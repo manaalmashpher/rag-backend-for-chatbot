@@ -11,6 +11,7 @@ import hashlib
 from functools import lru_cache
 
 from app.services.hybrid_search import HybridSearchService
+from app.services.reranker import RerankerService
 from app.schemas.search import SearchRequest, SearchResponse, SearchError
 from app.core.database import get_db
 from app.core.config import settings
@@ -22,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize services
 search_service = HybridSearchService()
+reranker_service = RerankerService()
 
 # Search result cache (in-memory for now, could be Redis in production)
 _search_cache: Dict[str, Dict[str, Any]] = {}
@@ -63,20 +65,48 @@ async def search_documents(
             logger.info(f"Cache hit for query: {search_request.q[:50]}...")
             return cached_result
         
-        # Perform hybrid search with timeout protection
+        # Perform hybrid search with top_k=50 for reranking
         import asyncio
         try:
             # Run search in thread pool to avoid blocking
             loop = asyncio.get_event_loop()
+            
+            # Get top_k candidates for reranking (default 50)
+            top_k = getattr(settings, 'rerank_top_k', 50)
             search_metadata = await loop.run_in_executor(
                 None, 
                 search_service.search_with_metadata,
                 search_request.q,
-                search_request.limit
+                top_k
             )
         except Exception as e:
             logger.error(f"Search execution failed: {str(e)}")
             raise HTTPException(status_code=500, detail="Search execution failed")
+        
+        # Apply reranking if service is available
+        hybrid_results = search_metadata['results']
+        try:
+            if reranker_service.is_available():
+                # Get top_r from config (default 10)
+                top_r = getattr(settings, 'rerank_top_r', 10)
+                
+                # Rerank the results
+                reranked_results = reranker_service.rerank(
+                    search_request.q,
+                    hybrid_results,
+                    top_r
+                )
+                logger.info(f"Reranked {len(hybrid_results)} candidates to {len(reranked_results)} results")
+                search_metadata['results'] = reranked_results
+                search_metadata['search_type'] = 'hybrid-reranked'
+            else:
+                logger.warning("Reranking service not available, using hybrid search results")
+                search_metadata['results'] = hybrid_results[:search_request.limit]
+                search_metadata['search_type'] = 'hybrid'
+        except Exception as e:
+            logger.error(f"Reranking failed: {str(e)}, falling back to hybrid search")
+            search_metadata['results'] = hybrid_results[:search_request.limit]
+            search_metadata['search_type'] = 'hybrid'
         
         # Calculate latency
         latency_ms = int((time.time() - start_time) * 1000)
@@ -85,7 +115,9 @@ async def search_documents(
         formatted_results = []
         for result in search_metadata['results']:
             # Generate snippet with query highlighting
-            snippet = _generate_snippet(result.get('text', ''), search_request.q)
+            result_text = result.get('text', '')
+            logger.debug(f"Result has text field: {bool(result_text)}, length: {len(result_text) if result_text else 0}")
+            snippet = _generate_snippet(result_text, search_request.q)
             
             formatted_result = {
                 'chunk_id': str(result.get('chunk_id', '')),
@@ -97,8 +129,13 @@ async def search_documents(
                 'source': str(result.get('source', '')),
                 'snippet': str(snippet) if snippet else None,
                 'score': float(result.get('fused_score', 0.0)),
-                'search_type': 'hybrid'
+                'search_type': search_metadata.get('search_type', 'hybrid')
             }
+            
+            # Add rerank_score if available (from reranking service)
+            if 'rerank_score' in result:
+                formatted_result['rerank_score'] = float(result['rerank_score'])
+            
             formatted_results.append(formatted_result)
         
         # Log search query (async to not block response)
@@ -110,7 +147,7 @@ async def search_documents(
             total_results=len(formatted_results),
             query=search_request.q,
             limit=search_request.limit,
-            search_type='hybrid',
+            search_type=search_metadata.get('search_type', 'hybrid'),
             metadata={
                 'semantic_weight': search_metadata['fusion_weights']['semantic'],
                 'lexical_weight': search_metadata['fusion_weights']['lexical'],

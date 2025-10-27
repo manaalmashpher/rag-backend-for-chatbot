@@ -1,0 +1,83 @@
+schema: 1
+story: "10.2"
+story_title: "Integrate Reranking with Search API"
+gate: CONCERNS
+status_reason: "Implementation is solid with good test coverage and backward compatibility. Performance impact from cross-encoder model needs monitoring in production."
+reviewer: "Quinn (Test Architect)"
+updated: "2025-10-27T12:00:00Z"
+
+top_issues:
+  - id: "PERF-001"
+    severity: medium
+    finding: "Cross-encoder model adds 200-500ms processing overhead per search request"
+    suggested_action: "Monitor latency metrics in production, consider caching reranked results for repeated queries"
+  - id: "RESOURCE-001"
+    severity: medium  
+    finding: "Model loading consumes significant memory (singleton pattern mitigates but still substantial)"
+    suggested_action: "Monitor memory usage, consider lazy loading or model size optimization"
+
+waiver: 
+  active: false
+
+risk_summary:
+  totals:
+    critical: 0
+    high: 2
+    medium: 3
+    low: 3
+  highest:
+    id: "TECH-001"
+    score: 6
+    title: "API Response Schema Breaking Changes"
+  recommendations:
+    must_fix:
+      - "Add rerank_score as optional field in SearchResult schema"
+      - "Implement comprehensive latency testing and monitoring"
+      - "Add graceful fallback mechanisms for reranking failures"
+    monitor:
+      - "Search latency metrics and reranking service health"
+      - "API backward compatibility with existing clients"
+      - "Memory usage and model loading status"
+
+test_design:
+  scenarios_total: 24
+  by_level:
+    unit: 6
+    integration: 14
+    e2e: 4
+  by_priority:
+    p0: 11
+    p1: 9
+    p2: 4
+  coverage_gaps: []
+
+evidence:
+  tests_reviewed: 24
+  risks_identified: 8
+  trace:
+    ac_covered: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    ac_gaps: []
+
+nfr_validation:
+  security:
+    status: PASS
+    notes: "No new security concerns introduced, input validation maintained"
+  performance:
+    status: CONCERNS
+    notes: "Model adds latency but fallback prevents degradation"
+  reliability:
+    status: PASS
+    notes: "Graceful fallback handles service unavailability"
+  maintainability:
+    status: PASS
+    notes: "Clean integration following existing patterns"
+
+recommendations:
+  immediate:
+    - action: "Monitor search latency metrics after deployment"
+      refs: ["app/api/routes/search.py:86-109"]
+  future:
+    - action: "Consider caching reranked results for performance optimization"
+      refs: ["app/api/routes/search.py:28-30"]
+    - action: "Add separate rate limiting for reranking if latency becomes issue"
+      refs: ["app/middleware/rate_limiting.py"]
