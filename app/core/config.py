@@ -43,12 +43,8 @@ class Settings(BaseSettings):
     password_min_length: int = 8
     bcrypt_rounds: int = 12
     
-    # LLM Configuration (not yet implemented)
-    # llm_provider: Optional[str] = None
-    # llm_model: str = "llama3-8b-8192"
-    # llm_api_key: Optional[str] = None
-    # llm_max_tokens: int = 1000
-    # llm_temperature: float = 0.7
+    # DeepSeek Configuration
+    deepseek_api_key: Optional[str] = None
     
     # Embedding Provider Configuration
     embedding_provider: str = "local"  # local, openai, cohere, etc.

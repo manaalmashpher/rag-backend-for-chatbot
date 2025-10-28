@@ -1,91 +1,120 @@
-# Epic 9: LLM Integration - Brownfield Enhancement
+# Epic 9: DeepSeek Chat Integration - MVP Implementation
 
-## ⚠️ DEFERRAL NOTICE
+## ⚠️ ACTIVE IMPLEMENTATION
 
-**Status:** DEFERRED as of 2025-10-23
-**Rationale:** Epic 9 is an enhancement feature that can be deferred without impacting core MVP functionality. The hybrid search system (Epic 2) provides essential search capability, and LLM integration can be added in a future iteration.
+**Status:** ACTIVE as of 2025-10-28
+**Rationale:** Adding minimal chat interface powered by DeepSeek (OpenAI-compatible API) on top of existing RAG stack to provide conversational search functionality.
 
-**Impact:** Users will receive raw search results instead of synthesized answers. Core MVP functionality remains intact.
+**Impact:** Users will receive synthesized answers from retrieved chunks instead of raw search results, enabling natural language interaction with the document corpus.
 
 ## Epic Goal
 
-Integrate a Large Language Model (LLM) into the existing RAG system to transform raw search results into coherent, contextual answers, providing users with direct responses instead of requiring manual interpretation of retrieved chunks.
+Integrate DeepSeek chat functionality into the existing RAG system to transform the current search page into a conversational chat interface that synthesizes answers strictly from retrieved document chunks.
 
 ## Epic Description
 
 **Existing System Context:**
 
 - **Current relevant functionality**: Hybrid search system that retrieves and ranks relevant document chunks using semantic vector similarity + lexical keyword matching
-- **Technology stack**: Python/FastAPI backend, React frontend, Qdrant vector database, Postgres with FTS, embedding models (configurable)
-- **Integration points**: Existing `/api/search` endpoint, hybrid search service, search results UI components
+- **Technology stack**: Python, FastAPI, uvicorn backend; Vite + React (TypeScript) frontend; Qdrant vector database, Postgres with FTS, cross-encoder reranker
+- **Integration points**: Existing hybrid search service, reranker service, search results UI components
 
 **Enhancement Details:**
 
-- **What's being added**: LLM integration layer that takes retrieved chunks and generates natural language answers
-- **How it integrates**: Extends the existing search flow: Query → Hybrid Search → LLM Synthesis → Answer Response
-- **Success criteria**: Users receive direct, contextual answers to their queries instead of raw document chunks
+- **What's being added**: DeepSeek chat integration with OpenAI-compatible API client, chat orchestrator service, and minimal React chat UI
+- **How it integrates**: Converts search flow to chat flow: User Question → Hybrid Search → Rerank → Context Building → DeepSeek Chat → Synthesized Answer
+- **Success criteria**: Users interact through conversational chat interface that provides grounded answers from document chunks with proper citations
 
 ## Stories
 
-1. **Story 1: LLM Service Integration** - Implement LLM service with configurable provider and model selection
-2. **Story 2: Answer Synthesis Pipeline** - Create pipeline to synthesize retrieved chunks into coherent answers
-3. **Story 3: Enhanced Search API** - Extend search API to return both raw results and synthesized answers
+1. **Story 1: DeepSeek Client Integration** - Create OpenAI-compatible DeepSeek client with environment configuration
+2. **Story 2: Chat Orchestrator Service** - Implement chat orchestrator that handles retrieval, reranking, context building, and answer synthesis
+3. **Story 3: Chat API Endpoint** - Create POST /api/chat endpoint for chat interactions
+4. **Story 4: React Chat UI** - Convert search page to minimal chat interface with conversation history and citations
 
-## Compatibility Requirements
+## Implementation Requirements
 
-- [ ] Existing search API remains unchanged (backward compatible)
-- [ ] Database schema changes are minimal (no breaking changes)
-- [ ] UI changes follow existing patterns and design system
-- [ ] Performance impact is acceptable (answer generation within 3-5 seconds)
-- [ ] Existing hybrid search functionality remains intact
+**Backend Components:**
+
+- [ ] DeepSeek client (`app/deps/deepseek_client.py`) with OpenAI-compatible interface
+- [ ] Chat orchestrator service (`app/services/chat_orchestrator.py`) with retrieval, reranking, and synthesis
+- [ ] Chat API route (`app/api/routes_chat.py`) with POST /api/chat endpoint
+- [ ] Environment configuration for DEEPSEEK_API_KEY
+
+**Frontend Components:**
+
+- [ ] React chat UI (convert existing search page or create new Chat.tsx)
+- [ ] Message state management with conversation history
+- [ ] Citations side panel for displaying source information
+- [ ] Input box and send functionality
+
+**Integration Requirements:**
+
+- [ ] No authentication required (MVP scope)
+- [ ] No streaming (simple request/response)
+- [ ] No tools or external calls (strict grounding to context)
+- [ ] Temperature set to 0.1 for consistent responses
+- [ ] Max tokens limited to 700 for concise answers
 
 ## Risk Mitigation
 
-- **Primary Risk**: LLM response quality and consistency may vary
-- **Mitigation**: Implement response validation, fallback to raw results, and configurable quality thresholds
-- **Rollback Plan**: Feature flag to disable LLM integration and revert to original chunk-based results
+- **Primary Risk**: DeepSeek API availability and response quality
+- **Mitigation**: Strict grounding to provided context, fallback message when no relevant chunks found
+- **Rollback Plan**: Can disable chat endpoint and revert to original search functionality
 
 ## Definition of Done
 
-- [ ] All stories completed with acceptance criteria met
-- [ ] Existing hybrid search functionality verified through testing
-- [ ] LLM integration works with existing search flow
-- [ ] API documentation updated with new response format
-- [ ] No regression in existing search performance or accuracy
-- [ ] LLM responses are contextually relevant and well-formed
-- [ ] Configuration allows switching between raw results and synthesized answers
+- [ ] DeepSeek client implemented with OpenAI-compatible interface
+- [ ] Chat orchestrator service handles retrieval, reranking, and synthesis
+- [ ] POST /api/chat endpoint returns proper JSON response with answer and citations
+- [ ] React chat UI displays conversation history and citations
+- [ ] Environment variable DEEPSEEK_API_KEY configured
+- [ ] Smoke tests pass: in-scope questions return grounded answers, out-of-scope questions return "couldn't find" response
+- [ ] No authentication or streaming required (MVP scope)
+- [ ] All answers strictly grounded to provided context chunks
 
-## Technical Considerations
+## Technical Implementation Details
 
-**LLM Integration Approach:**
+**DeepSeek Client (`app/deps/deepseek_client.py`):**
 
-- Add LLM service layer between hybrid search and response formatting
-- Support multiple LLM providers (OpenAI, Anthropic, local models)
-- Implement prompt engineering for consistent answer quality
-- Add response caching to improve performance
+- OpenAI-compatible client with base_url: `https://api.deepseek.com/v1`
+- Model: `deepseek-chat`
+- Function: `deepseek_chat(messages, temperature=0.1, max_tokens=700)`
+- Environment variable: `DEEPSEEK_API_KEY`
 
-**API Enhancement:**
+**Chat Orchestrator (`app/services/chat_orchestrator.py`):**
 
-- Extend search response to include both `chunks` and `answer` fields
-- Maintain backward compatibility with existing clients
-- Add configuration options for answer generation
+- `retrieve_candidates(query: str, top_k: int = 20)` → list of candidate chunks
+- `rerank(query: str, candidates: list, top_k: int = 8)` → reranked chunks
+- `save_turn()` and `load_history()` (no-ops if no persistence)
+- Context building with bracketed indices and metadata
+- System prompt: "You are a document QA assistant. You must answer strictly using the provided CONTEXT."
+- User message wrapper with explicit grounding instructions
 
-**Performance Targets:**
+**API Endpoint (`app/api/routes_chat.py`):**
 
-- Answer generation: < 3 seconds for typical queries
-- Maintain existing search latency targets (p95 ≤ 1.5s, p99 ≤ 3.0s)
-- Implement intelligent caching for repeated queries
+- POST /api/chat
+- Request: `{ "conversation_id": string, "message": string }`
+- Response: `{ "answer": string, "citations": array }`
+
+**Frontend Chat UI:**
+
+- Message state: `{ role: "user" | "assistant", content: string }`
+- Stable conversation_id (UUID generated on mount)
+- Citations side panel with rank, doc_id, chunk_id, score, source, page info
 
 ## Dependencies
 
 - Existing hybrid search service (no changes required)
-- LLM provider API access and configuration
-- Prompt engineering and response validation
-- UI updates to display synthesized answers
+- Existing reranker service (no changes required)
+- DeepSeek API access and DEEPSEEK_API_KEY configuration
+- OpenAI-compatible Python client library
+- React frontend with existing styling framework
 
 ## Success Metrics
 
-- **User Experience**: Users prefer synthesized answers over raw chunks (qualitative feedback)
-- **Response Quality**: Answer relevance score ≥ 4/5 on test queries
-- **Performance**: Answer generation latency p95 ≤ 3 seconds
-- **Reliability**: LLM service availability ≥ 99% during testing period
+- **Functionality**: POST /api/chat returns valid JSON with answer and citations
+- **Grounding**: Answers reference only provided context chunks
+- **Fallback**: Out-of-scope questions return "couldn't find" response
+- **UI**: Chat interface displays conversation history and citations properly
+- **Integration**: No breaking changes to existing search functionality

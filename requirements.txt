@@ -48,6 +48,9 @@ click==8.2.1
 tqdm==4.67.1
 psutil==6.1.0  # For memory monitoring
 
+# OpenAI-compatible client for DeepSeek
+openai==1.12.0
+
 # Core dependencies (required by above packages)
 typing_extensions==4.15.0
 annotated-types==0.7.0
