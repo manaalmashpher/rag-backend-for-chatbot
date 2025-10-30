@@ -57,3 +57,6 @@ htmlcov/
 
 #original requirements.txt
 requirements-og.txt
+
+#dev mode script
+rundev.py
