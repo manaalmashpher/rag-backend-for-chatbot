@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from app.api.routes import upload, status, search, auth, health
+from app.api.routes import upload, status, search, auth, health, chat
 from app.core.config import settings
 from app.core.database import engine
 from app.models import Base
@@ -123,6 +123,7 @@ app.include_router(upload.router, prefix="/api", tags=["upload"])
 app.include_router(status.router, prefix="/api", tags=["status"])
 app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
+app.include_router(chat.router, prefix="/api", tags=["chat"])
 app.include_router(health.router, tags=["health"])
 
 # Serve static files from the built frontend

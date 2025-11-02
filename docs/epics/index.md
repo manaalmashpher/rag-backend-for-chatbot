@@ -53,12 +53,12 @@ This directory contains the epic definitions extracted from the PRD and architec
    - Priority: High
    - Effort: Large (8-13 story points)
 
-9. **[Epic 9: LLM Integration](./epic-9-llm-integration.md)** ⏳ **DEFERRED**
+9. **[Epic 9: DeepSeek Chat Integration](./epic-9-llm-integration.md)** ⚠️ **ACTIVE**
 
-   - LLM service integration for answer synthesis
-   - Priority: Deferred
+   - DeepSeek chat integration for conversational search with answer synthesis
+   - Priority: High
    - Effort: Medium (5-8 story points)
-   - **Status**: Deferred for future implementation
+   - **Status**: ACTIVE as of 2025-10-28
 
 10. **[Epic 10: Reranking Feature](./epic-10-reranking-feature.md)**
 

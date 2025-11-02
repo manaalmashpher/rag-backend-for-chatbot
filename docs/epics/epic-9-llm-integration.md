@@ -27,10 +27,11 @@ Integrate DeepSeek chat functionality into the existing RAG system to transform 
 
 ## Stories
 
-1. **Story 1: DeepSeek Client Integration** - Create OpenAI-compatible DeepSeek client with environment configuration
-2. **Story 2: Chat Orchestrator Service** - Implement chat orchestrator that handles retrieval, reranking, context building, and answer synthesis
-3. **Story 3: Chat API Endpoint** - Create POST /api/chat endpoint for chat interactions
-4. **Story 4: React Chat UI** - Convert search page to minimal chat interface with conversation history and citations
+1. **Story 9.1: DeepSeek Client Integration** - Create OpenAI-compatible DeepSeek client with environment configuration
+2. **Story 9.2: Chat Orchestrator Service** - Implement chat orchestrator that handles retrieval, reranking, context building, and answer synthesis
+3. **Story 9.3: Chat API Endpoint** - Create POST /api/chat endpoint for chat interactions
+4. **Story 9.4: DeepSeek API Authentication** - Verify and enhance DeepSeek API Bearer token authentication
+5. **Story 9.5: React Chat UI** - Convert search page to minimal chat interface with conversation history and citations
 
 ## Implementation Requirements
 
@@ -50,7 +51,8 @@ Integrate DeepSeek chat functionality into the existing RAG system to transform 
 
 **Integration Requirements:**
 
-- [ ] No authentication required (MVP scope)
+- [ ] No user authentication required for `/api/chat` (MVP scope - public endpoint)
+- [ ] DeepSeek API authentication via Bearer token using `DEEPSEEK_API_KEY` environment variable
 - [ ] No streaming (simple request/response)
 - [ ] No tools or external calls (strict grounding to context)
 - [ ] Temperature set to 0.1 for consistent responses
@@ -68,9 +70,10 @@ Integrate DeepSeek chat functionality into the existing RAG system to transform 
 - [ ] Chat orchestrator service handles retrieval, reranking, and synthesis
 - [ ] POST /api/chat endpoint returns proper JSON response with answer and citations
 - [ ] React chat UI displays conversation history and citations
-- [ ] Environment variable DEEPSEEK_API_KEY configured
+- [ ] Environment variable `DEEPSEEK_API_KEY` configured with valid DeepSeek API key
+- [ ] DeepSeek API authentication working via Bearer token (handled automatically by OpenAI client)
 - [ ] Smoke tests pass: in-scope questions return grounded answers, out-of-scope questions return "couldn't find" response
-- [ ] No authentication or streaming required (MVP scope)
+- [ ] No user authentication required for `/api/chat` endpoint (MVP scope)
 - [ ] All answers strictly grounded to provided context chunks
 
 ## Technical Implementation Details
