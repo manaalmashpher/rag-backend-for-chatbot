@@ -125,6 +125,38 @@ The API will be available at `http://localhost:8000` with automatic documentatio
 - **Input Sanitization**: XSS protection for user inputs
 - **CORS Configuration**: Proper cross-origin request handling
 - **Rate Limiting**: Protection against abuse and DoS attacks
+- **API Key Security**: DeepSeek API keys are sanitized in logs and error messages
+
+## 🔧 Troubleshooting
+
+### DeepSeek API Authentication Issues
+
+If you encounter errors related to DeepSeek API authentication, check the following:
+
+**Error: `AUTH_ERROR` or `INVALID_API_KEY`**
+
+- Verify your DeepSeek API key is correctly configured
+- Check that `DEEPSEEK_API_KEY` environment variable is set, or `Settings.deepseek_api_key` is configured
+- Ensure the API key is valid and not expired (get a new key from https://platform.deepseek.com/)
+- Note: Settings.deepseek_api_key takes precedence over environment variable if both are set
+
+**Error: Missing API Key**
+
+- Configure `DEEPSEEK_API_KEY` in your `.env` file, or set `Settings.deepseek_api_key`
+- The application will log a warning at startup if the key is missing (non-blocking)
+- Check the `/readyz` health check endpoint to verify configuration status
+
+**Common Error Codes:**
+
+- `AUTH_ERROR`: API key is not configured
+- `INVALID_API_KEY`: API key is invalid or authentication failed
+- `CHAT_ERROR`: Generic chat processing error (may include authentication issues)
+
+**Health Check:**
+
+- Visit `GET /readyz` to check DeepSeek configuration status
+- The `llm` component will show `"status": "configured"` or `"status": "not_configured"`
+- Note: Health checks do NOT make actual API calls to avoid billing costs
 
 ## 📊 Chunking Methods
 

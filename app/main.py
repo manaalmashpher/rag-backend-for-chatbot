@@ -40,6 +40,18 @@ async def startup_event():
     try:
         logging.info("Starting database initialization...")
         
+        # Validate DeepSeek API key configuration (non-blocking warning)
+        import os
+        deepseek_key = settings.deepseek_api_key or os.getenv("DEEPSEEK_API_KEY")
+        if not deepseek_key or deepseek_key.strip() == "":
+            logging.warning(
+                "DeepSeek API key is not configured. "
+                "Please configure DEEPSEEK_API_KEY environment variable or Settings.deepseek_api_key. "
+                "Chat functionality will not work without a valid API key."
+            )
+        else:
+            logging.info("DeepSeek API key configuration validated")
+        
         # Create all tables
         Base.metadata.create_all(bind=engine)
         logging.info("Database tables created successfully")

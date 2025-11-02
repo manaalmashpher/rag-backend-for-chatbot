@@ -142,11 +142,22 @@ class HealthService:
                 "message": "Embedding service not initialized - check configuration"
             }
         
-        # LLM provider not yet integrated
-        components["llm"] = {
-            "status": "not_implemented",
-            "message": "LLM integration not yet implemented"
-        }
+        # Check DeepSeek LLM provider configuration
+        # CRITICAL: Only check configuration presence, DO NOT make actual API calls to avoid billing
+        import os
+        deepseek_key = settings.deepseek_api_key or os.getenv("DEEPSEEK_API_KEY")
+        if deepseek_key and deepseek_key.strip():
+            components["llm"] = {
+                "status": "configured",
+                "provider": "deepseek",
+                "message": "DeepSeek API key is configured"
+            }
+        else:
+            components["llm"] = {
+                "status": "not_configured",
+                "provider": "deepseek",
+                "message": "DeepSeek API key is not configured. Set DEEPSEEK_API_KEY or Settings.deepseek_api_key"
+            }
         
         result = {
             "status": "ready" if overall_healthy else "not_ready",

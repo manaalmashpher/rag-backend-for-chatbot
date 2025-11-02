@@ -7,6 +7,7 @@ import logging
 from app.services.hybrid_search import HybridSearchService
 from app.services.reranker import RerankerService
 from app.deps.deepseek_client import deepseek_chat
+from app.deps.exceptions import MissingAPIKeyError, InvalidAPIKeyError
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +206,10 @@ class ChatOrchestrator:
             logger.info("Answer synthesis completed successfully")
             return answer
             
+        except (MissingAPIKeyError, InvalidAPIKeyError) as e:
+            # Re-raise authentication errors - let caller handle with proper error codes
+            logger.error(f"DeepSeek authentication error: {str(e)}")
+            raise
         except Exception as e:
             logger.error(f"Error synthesizing answer: {str(e)}")
             raise RuntimeError(f"Failed to synthesize answer: {str(e)}")

@@ -12,6 +12,7 @@ import uuid as uuid_lib
 from app.services.chat_orchestrator import ChatOrchestrator
 from app.schemas.chat import ChatRequest, ChatResponse, ChatError, Citation
 from app.core.config import settings
+from app.deps.exceptions import MissingAPIKeyError, InvalidAPIKeyError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -83,6 +84,26 @@ async def chat_endpoint(
         logger.info(f"Chat request completed: conversation_id={chat_request.conversation_id}, latency_ms={latency_ms}, citations_count={len(citations)}")
         return response
         
+    except MissingAPIKeyError as e:
+        # Authentication error - missing API key
+        logger.error(f"DeepSeek API key missing: {str(e)}")
+        error_response = ChatError.create(
+            code="AUTH_ERROR",
+            message="DeepSeek API key is not configured. Please configure DEEPSEEK_API_KEY environment variable or Settings.deepseek_api_key",
+            details={"error_type": "missing_api_key"},
+            request_id=request_id
+        )
+        raise HTTPException(status_code=500, detail=error_response.model_dump())
+    except InvalidAPIKeyError as e:
+        # Authentication error - invalid API key
+        logger.error(f"DeepSeek API key invalid: {str(e)}")
+        error_response = ChatError.create(
+            code="INVALID_API_KEY",
+            message="DeepSeek API key is invalid or authentication failed. Please verify your API key configuration",
+            details={"error_type": "invalid_api_key"},
+            request_id=request_id
+        )
+        raise HTTPException(status_code=500, detail=error_response.model_dump())
     except ValueError as e:
         # Defensive handler for ValueError (Pydantic validation occurs before this handler,
         # but this provides safety net for any manual validation or edge cases)
