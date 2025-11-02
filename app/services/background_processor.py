@@ -22,11 +22,15 @@ class BackgroundProcessor:
         self.processing = False
         self.ingestion_service = IngestionService()
         self.max_processing_time = 300  # 5 minutes max per document
-        self.poll_interval = 5  # Check every 5 seconds
+        self.poll_interval_idle = 30  # Check every 30 seconds when idle (reduced CPU usage)
+        self.poll_interval_active = 12  # Check every 5 seconds when processing
         self.max_retries = 3  # Max retries for failed processing
-        self.memory_cleanup_interval = 3  # Cleanup memory every 3 processing cycles
+        self.memory_cleanup_interval = 10  # Cleanup memory every 10 processing cycles (reduced frequency)
         self.processing_count = 0
         self.max_memory_mb = 1200  # Emergency cleanup threshold (higher for all-mpnet-base-v2)
+        self.consecutive_empty_polls = 0  # Track consecutive polls with no work
+        self.last_memory_check = 0  # Track last memory check time
+        self.memory_check_interval = 60  # Only check memory every 60 seconds (reduced CPU usage)
     
     async def start_processing(self):
         """Start the background processing loop"""
@@ -39,17 +43,34 @@ class BackgroundProcessor:
         
         try:
             while self.processing:
-                # Check memory usage before processing
-                await self._check_memory_usage()
+                # Adaptive polling: longer sleep when idle to reduce CPU usage
+                had_work = await self._process_pending_ingestions()
                 
-                await self._process_pending_ingestions()
+                # Use adaptive polling interval based on whether there's work
+                if had_work:
+                    self.consecutive_empty_polls = 0
+                    current_poll_interval = self.poll_interval_active
+                else:
+                    self.consecutive_empty_polls += 1
+                    # Gradually increase poll interval when idle (up to 60 seconds max)
+                    current_poll_interval = min(
+                        self.poll_interval_idle + (self.consecutive_empty_polls * 5),
+                        60
+                    )
                 
-                # Periodic memory cleanup
+                # Periodic memory checks (less frequent to save CPU)
+                import time
+                current_time = time.time()
+                if current_time - self.last_memory_check >= self.memory_check_interval:
+                    await self._check_memory_usage()
+                    self.last_memory_check = current_time
+                
+                # Periodic memory cleanup (less frequent)
                 self.processing_count += 1
                 if self.processing_count % self.memory_cleanup_interval == 0:
                     await self._cleanup_memory()
                 
-                await asyncio.sleep(self.poll_interval)  # Check every 5 seconds
+                await asyncio.sleep(current_poll_interval)
         except Exception as e:
             logger.error(f"Background processor error: {e}")
         finally:
@@ -62,7 +83,11 @@ class BackgroundProcessor:
         logger.info("Stopping background document processor")
     
     async def _process_pending_ingestions(self):
-        """Process any pending ingestion records"""
+        """Process any pending ingestion records
+        
+        Returns:
+            bool: True if work was found and processed, False otherwise
+        """
         db = None
         try:
             db = next(get_db())
@@ -121,16 +146,32 @@ class BackgroundProcessor:
             
             logger.debug(f"Found {len(pending_ingestions)} pending ingestions")
             
+            # Return False if no work found
+            if not pending_ingestions:
+                return False
+            
+            # Track if we actually processed any work
+            work_processed = False
+            
             for ingestion in pending_ingestions:
-                # Check memory before processing
+                # Check memory before processing (only if we haven't checked recently)
                 import psutil
                 import os
-                process = psutil.Process(os.getpid())
-                memory_mb = process.memory_info().rss / 1024 / 1024
+                import time
+                current_time = time.time()
                 
-                if memory_mb > 1150:  # Skip processing if memory is too high (reduced for Railway deployment)
-                    logger.warning(f"Skipping ingestion {ingestion.id} due to high memory usage: {memory_mb:.1f}MB")
-                    continue
+                # Only check memory if it's been more than 30 seconds since last check
+                if current_time - self.last_memory_check >= 30:
+                    process = psutil.Process(os.getpid())
+                    memory_mb = process.memory_info().rss / 1024 / 1024
+                    self.last_memory_check = current_time
+                    
+                    if memory_mb > 1150:  # Skip processing if memory is too high (reduced for Railway deployment)
+                        logger.warning(f"Skipping ingestion {ingestion.id} due to high memory usage: {memory_mb:.1f}MB")
+                        continue
+                else:
+                    # Use cached memory value or skip check to save CPU
+                    memory_mb = None
                 
                 # Handle retry logic
                 if ingestion.status == "failed":
@@ -144,7 +185,8 @@ class BackgroundProcessor:
                     db.commit()
                     logger.info(f"Retrying ingestion {ingestion.id} (attempt {ingestion.retry_count}/{self.max_retries})")
                 
-                logger.info(f"Processing ingestion {ingestion.id} (memory: {memory_mb:.1f}MB)")
+                memory_str = f"{memory_mb:.1f}MB" if memory_mb else "N/A"
+                logger.info(f"Processing ingestion {ingestion.id} (memory: {memory_str})")
                 start_time = time.time()
                 
                 try:
@@ -160,6 +202,7 @@ class BackgroundProcessor:
                     )
                     
                     processing_time = time.time() - start_time
+                    work_processed = True  # We attempted/started processing
                     if success:
                         logger.info(f"Successfully processed ingestion {ingestion.id} in {processing_time:.2f}s")
                     else:
@@ -167,6 +210,7 @@ class BackgroundProcessor:
                         
                 except asyncio.TimeoutError:
                     processing_time = time.time() - start_time
+                    work_processed = True  # We attempted processing (timed out)
                     logger.error(f"Processing timeout for ingestion {ingestion.id} after {processing_time:.2f}s")
                     # Update status to failed due to timeout
                     try:
@@ -179,6 +223,7 @@ class BackgroundProcessor:
                         
                 except Exception as e:
                     processing_time = time.time() - start_time
+                    work_processed = True  # We attempted processing (error occurred)
                     logger.error(f"Error processing ingestion {ingestion.id} after {processing_time:.2f}s: {e}")
                     logger.error(f"Error type: {type(e).__name__}")
                     logger.error(f"Error details: {str(e)}")
@@ -200,12 +245,15 @@ class BackgroundProcessor:
                     db.rollback()
                 except Exception as rollback_error:
                     logger.error(f"Failed to rollback transaction: {rollback_error}")
+            return False
         finally:
             if db:
                 try:
                     db.close()
                 except Exception as close_error:
                     logger.error(f"Failed to close database connection: {close_error}")
+        
+        return work_processed  # Return True only if we actually processed work
     
     async def _cleanup_memory(self):
         """Perform memory cleanup to prevent memory leaks"""
@@ -214,16 +262,14 @@ class BackgroundProcessor:
             import psutil
             import os
             
-            # Get current memory usage
+            # Get current memory usage (less frequent checks)
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
             
             logger.info(f"Memory usage before cleanup: {memory_mb:.1f}MB")
             
-            # Force garbage collection multiple times
-            collected = 0
-            for _ in range(3):  # More aggressive passes
-                collected += gc.collect()
+            # Reduced garbage collection passes to save CPU (1 pass instead of 3)
+            collected = gc.collect()
             logger.debug(f"Garbage collection freed {collected} objects")
             
             # Clear embedding cache if it's getting too large
@@ -238,7 +284,7 @@ class BackgroundProcessor:
                 elif cache_size > 50:  # Log warning for large cache
                     logger.warning(f"Embedding cache is large: {cache_size} entries")
             
-            # Force another garbage collection after cache clearing
+            # Single garbage collection after cache clearing (reduced CPU usage)
             gc.collect()
             
             # Get memory usage after cleanup
@@ -286,10 +332,9 @@ class BackgroundProcessor:
             embedding_service = EmbeddingService()
             embedding_service.clear_cache()
             
-            # Force aggressive garbage collection
+            # Single garbage collection pass (reduced CPU usage)
             import gc
-            for _ in range(2):  # Multiple aggressive passes
-                gc.collect()
+            gc.collect()
             
             # Try to clear any remaining references
             import sys

@@ -31,7 +31,7 @@ class EmbeddingService:
             self._cache_ttl = 3600  # 1 hour cache
             self._cache_timestamps: Dict[str, float] = {}
             self._max_cache_size = 100  # Reduced cache size for Railway deployment
-            self._init_sentence_transformers()
+            self.st_model = None  # Model loaded lazily on first use (or pre-warmed on startup)
             EmbeddingService._initialized = True
     
     def _init_sentence_transformers(self):
@@ -68,6 +68,11 @@ class EmbeddingService:
         except ImportError:
             raise RuntimeError("sentence-transformers not installed. Run: pip install sentence-transformers")
     
+    def _ensure_model_loaded(self):
+        """Load the model if not already loaded (called automatically on first use or during pre-warming)"""
+        if self.st_model is None:
+            self._init_sentence_transformers()
+    
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
         Generate embeddings for a list of texts with caching
@@ -79,6 +84,8 @@ class EmbeddingService:
             List of embedding vectors
         """
         try:
+            # Ensure model is loaded (loads on first use or during pre-warming)
+            self._ensure_model_loaded()
             # Check cache first
             cached_embeddings = []
             texts_to_generate = []
@@ -104,10 +111,9 @@ class EmbeddingService:
                     batch_embeddings = self.st_model.encode(batch, convert_to_tensor=False)
                     new_embeddings_list.extend(batch_embeddings.tolist())
                     
-                    # Force aggressive garbage collection after each batch for heavy model
+                    # Single garbage collection after each batch (reduced CPU usage)
                     import gc
-                    for _ in range(2):  # Multiple passes for heavy model
-                        gc.collect()
+                    gc.collect()
                 
                 # Cache the new embeddings with smart cache management
                 for text, embedding in zip(texts_to_generate, new_embeddings_list):
@@ -145,6 +151,9 @@ class EmbeddingService:
         Returns:
             Embedding vector
         """
+        # Ensure model is loaded (loads on first use or during pre-warming)
+        self._ensure_model_loaded()
+        
         cache_key = self._get_cache_key(text)
         
         # Check cache first
@@ -207,6 +216,8 @@ class EmbeddingService:
             True if healthy, raises exception if not
         """
         try:
+            # Ensure model is loaded (loads on first use or during pre-warming)
+            self._ensure_model_loaded()
             # Test with a simple embedding generation
             test_embedding = self.generate_embeddings(["test"])
             if not test_embedding or len(test_embedding) == 0:
