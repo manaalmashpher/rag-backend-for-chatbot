@@ -17,20 +17,8 @@ const ChatPage: React.FC = () => {
   });
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <div className="text-center mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">Chat</h1>
-        <p className="text-gray-600">
-          Ask questions in natural language and receive answers with citations
-          from your document corpus
-        </p>
-      </div>
-
-      <div className="card">
-        <div className="h-[600px] flex flex-col">
-          <ChatInterface conversationId={conversationId} />
-        </div>
-      </div>
+    <div className="flex flex-col bg-white">
+      <ChatInterface conversationId={conversationId} />
     </div>
   );
 };

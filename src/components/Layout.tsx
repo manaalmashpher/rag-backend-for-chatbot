@@ -54,7 +54,11 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div
+      className={`min-h-screen bg-gray-50 ${
+        location.pathname === "/chat" ? "relative" : ""
+      }`}
+    >
       {/* Header */}
       <header className="bg-white shadow">
         <div className="container">
@@ -212,7 +216,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </header>
 
       {/* Main Content */}
-      <main className="container py-8">{children}</main>
+      <main className={location.pathname === "/chat" ? "" : "container py-8"}>
+        {children}
+      </main>
     </div>
   );
 };
