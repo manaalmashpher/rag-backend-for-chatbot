@@ -8,6 +8,7 @@ import {
   LogOut,
   ChevronDown,
   Building2,
+  MessageCircle,
 } from "lucide-react";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -49,6 +50,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: "Upload", href: "/upload", icon: Upload },
     { name: "Status", href: "/status", icon: BarChart3 },
     { name: "Search", href: "/search", icon: Search },
+    { name: "Chat", href: "/chat", icon: MessageCircle },
   ];
 
   return (

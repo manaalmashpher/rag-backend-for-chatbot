@@ -5,6 +5,7 @@ import Layout from "./components/Layout";
 import UploadPage from "./pages/UploadPage";
 import StatusPage from "./pages/StatusPage";
 import SearchPage from "./pages/SearchPage";
+import ChatPage from "./pages/ChatPage";
 import HomePage from "./pages/HomePage";
 import { LoginPage } from "./pages/LoginPage";
 import { RegisterPage } from "./pages/RegisterPage";
@@ -51,6 +52,16 @@ function App() {
             <ProtectedRoute>
               <Layout>
                 <SearchPage />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <ChatPage />
               </Layout>
             </ProtectedRoute>
           }

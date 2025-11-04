@@ -87,6 +87,37 @@ export interface SearchResponse {
   latency_ms: number;
 }
 
+// Chat API types
+export interface Citation {
+  doc_id: string;
+  chunk_id: string;
+  page_from?: number;
+  page_to?: number;
+  score: number; // 0.0 to 1.0
+  text: string;
+}
+
+export interface ChatRequest {
+  conversation_id: string; // UUID string for conversation tracking
+  message: string; // User message (1-1000 characters)
+}
+
+export interface ChatResponse {
+  answer: string;
+  citations: Citation[];
+  conversation_id: string; // Echoed conversation ID
+  latency_ms: number;
+}
+
+export interface ChatError {
+  error: {
+    code: string; // Error code (e.g., "CHAT_ERROR", "AUTH_ERROR", "INVALID_API_KEY")
+    message: string; // Human-readable error message
+    details: Record<string, any>;
+    requestId: string;
+  };
+}
+
 // API service functions
 export const apiService = {
   // Upload a document
@@ -130,6 +161,36 @@ export const apiService = {
       }
     );
     return response.data;
+  },
+
+  // Send chat message
+  async sendChatMessage(
+    conversationId: string,
+    message: string
+  ): Promise<ChatResponse> {
+    try {
+      const response: AxiosResponse<ChatResponse> = await apiClient.post(
+        "/api/chat",
+        {
+          conversation_id: conversationId,
+          message: message,
+        }
+      );
+      return response.data;
+    } catch (error: any) {
+      // Handle API errors with proper error model
+      if (error.response?.data?.error) {
+        // Extract error.message from ChatError response
+        const chatError: ChatError = error.response.data;
+        const apiError = new Error(chatError.error.message);
+        (apiError as any).code = chatError.error.code;
+        (apiError as any).details = chatError.error.details;
+        (apiError as any).requestId = chatError.error.requestId;
+        throw apiError;
+      }
+      // Re-throw other errors (network, etc.)
+      throw error;
+    }
   },
 };
 

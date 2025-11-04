@@ -9,7 +9,7 @@
 
 ## Epic Goal
 
-Integrate DeepSeek chat functionality into the existing RAG system to transform the current search page into a conversational chat interface that synthesizes answers strictly from retrieved document chunks.
+Integrate DeepSeek chat functionality into the existing RAG system to add a conversational chat interface alongside the search page that synthesizes answers strictly from retrieved document chunks.
 
 ## Epic Description
 
@@ -22,7 +22,7 @@ Integrate DeepSeek chat functionality into the existing RAG system to transform 
 **Enhancement Details:**
 
 - **What's being added**: DeepSeek chat integration with OpenAI-compatible API client, chat orchestrator service, and minimal React chat UI
-- **How it integrates**: Converts search flow to chat flow: User Question → Hybrid Search → Rerank → Context Building → DeepSeek Chat → Synthesized Answer
+- **How it integrates**: Adds chat flow alongside search flow: User Question → Hybrid Search → Rerank → Context Building → DeepSeek Chat → Synthesized Answer
 - **Success criteria**: Users interact through conversational chat interface that provides grounded answers from document chunks with proper citations
 
 ## Stories
@@ -31,7 +31,7 @@ Integrate DeepSeek chat functionality into the existing RAG system to transform 
 2. **Story 9.2: Chat Orchestrator Service** - Implement chat orchestrator that handles retrieval, reranking, context building, and answer synthesis
 3. **Story 9.3: Chat API Endpoint** - Create POST /api/chat endpoint for chat interactions
 4. **Story 9.4: DeepSeek API Authentication** - Verify and enhance DeepSeek API Bearer token authentication
-5. **Story 9.5: React Chat UI** - Convert search page to minimal chat interface with conversation history and citations
+5. **Story 9.5: React Chat UI** - Create new chat page with minimal chat interface, conversation history, and citations
 
 ## Implementation Requirements
 
@@ -44,7 +44,7 @@ Integrate DeepSeek chat functionality into the existing RAG system to transform 
 
 **Frontend Components:**
 
-- [ ] React chat UI (convert existing search page or create new Chat.tsx)
+- [ ] React chat UI (create new ChatPage.tsx)
 - [ ] Message state management with conversation history
 - [ ] Citations side panel for displaying source information
 - [ ] Input box and send functionality
@@ -62,7 +62,7 @@ Integrate DeepSeek chat functionality into the existing RAG system to transform 
 
 - **Primary Risk**: DeepSeek API availability and response quality
 - **Mitigation**: Strict grounding to provided context, fallback message when no relevant chunks found
-- **Rollback Plan**: Can disable chat endpoint and revert to original search functionality
+- **Rollback Plan**: Can disable chat endpoint (search functionality remains unchanged and unaffected)
 
 ## Definition of Done
 
