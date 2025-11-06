@@ -64,3 +64,8 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 settings = Settings()
+
+# Convert storage_path to absolute path to avoid issues with relative paths
+# when working directory changes (e.g., in background workers)
+if not os.path.isabs(settings.storage_path):
+    settings.storage_path = os.path.abspath(settings.storage_path)

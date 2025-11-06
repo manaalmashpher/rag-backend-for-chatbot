@@ -153,14 +153,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId }) => {
                   className={`flex-1 max-w-[80%] ${
                     message.role === "user"
                       ? "flex justify-end"
-                      : "flex justify-start"
+                      : "flex justify-end"
                   }`}
                 >
                   <div
                     className={`rounded-2xl px-4 py-3 shadow-sm ${
                       message.role === "user"
                         ? "bg-blue-600 text-white rounded-tr-md"
-                        : "bg-gray-50 text-gray-900 border border-gray-200 rounded-tl-md"
+                        : "bg-gray-50 text-gray-900 border border-gray-200 rounded-tl-md mr-auto"
                     }`}
                   >
                     <p className="text-base leading-relaxed whitespace-pre-wrap">

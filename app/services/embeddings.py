@@ -99,12 +99,15 @@ class EmbeddingService:
                     texts_to_generate.append(text)
                     text_indices.append(i)
             
+            # Initialize new_embeddings_list before the conditional block
+            # to avoid UnboundLocalError when all texts are cached
+            new_embeddings_list = []
+            
             # Generate embeddings for uncached texts
             if texts_to_generate:
                 # Process in very small batches to reduce memory usage (very small for all-mpnet-base-v2)
                 # Even smaller batch size for memory-constrained environments like Railway
                 batch_size = min(2, len(texts_to_generate))  # Process max 2 texts at once for Railway deployment
-                new_embeddings_list = []
                 
                 for i in range(0, len(texts_to_generate), batch_size):
                     batch = texts_to_generate[i:i + batch_size]

@@ -79,10 +79,40 @@ async def upload_file(
     # Check if document already exists
     existing_doc = db.query(Document).filter(Document.sha256 == file_hash).first()
     if existing_doc:
-        raise HTTPException(
-            status_code=409,
-            detail="Document with this content already exists"
-        )
+        # Check if document has actual data (chunks) or successful ingestions
+        # Only reject if there are chunks (actual processed data)
+        has_chunks = db.query(Chunk).filter(Chunk.doc_id == existing_doc.id).first() is not None
+        
+        if has_chunks:
+            # Document has processed chunks, reject as duplicate
+            raise HTTPException(
+                status_code=409,
+                detail="Document with this content already exists"
+            )
+        else:
+            # No chunks found - document is orphaned or only has failed ingestions
+            # Clean up all related data and allow re-upload
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Found document {existing_doc.id} with same hash but no chunks, cleaning up for re-upload")
+            
+            # Delete all ingestions for this document (including failed ones)
+            ingestions_deleted = db.query(Ingestion).filter(Ingestion.doc_id == existing_doc.id).delete()
+            logger.info(f"Deleted {ingestions_deleted} ingestions for document {existing_doc.id}")
+            
+            # Delete the orphaned document and its physical file
+            try:
+                file_extension = _get_file_extension(existing_doc.mime)
+                file_path = os.path.join(settings.storage_path, f"{existing_doc.sha256}.{file_extension}")
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    logger.info(f"Deleted orphaned physical file: {file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to delete orphaned physical file: {e}")
+            
+            db.delete(existing_doc)
+            db.commit()
+            logger.info(f"Deleted orphaned document {existing_doc.id}, allowing re-upload")
     
     # Check for scanned PDF
     if file.content_type == 'application/pdf':
@@ -221,10 +251,12 @@ async def delete_document(
         # No manual FTS cleanup needed for PostgreSQL
         
         # Delete chunks from database (due to foreign key constraints)
-        chunks_deleted = db.query(Chunk).filter(Chunk.doc_id == doc_id).delete()
+        # Use synchronize_session=False to prevent session state issues that could affect other documents
+        chunks_deleted = db.query(Chunk).filter(Chunk.doc_id == doc_id).delete(synchronize_session=False)
         
         # Delete ingestions
-        ingestions_deleted = db.query(Ingestion).filter(Ingestion.doc_id == doc_id).delete()
+        # Use synchronize_session=False to prevent session state issues that could affect other documents
+        ingestions_deleted = db.query(Ingestion).filter(Ingestion.doc_id == doc_id).delete(synchronize_session=False)
         
         # Delete the physical file from storage
         file_deleted = False
