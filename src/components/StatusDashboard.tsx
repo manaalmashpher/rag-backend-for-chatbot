@@ -96,16 +96,13 @@ const StatusDashboard: React.FC<StatusDashboardProps> = ({ ingestionId }) => {
   };
 
   const handleRefresh = () => {
-    console.log("Refresh button clicked");
     setIsRefreshing(true);
     refetch()
       .then((result) => {
-        console.log("Refetch completed:", result);
         // Show refreshing state for a moment to give visual feedback
         setTimeout(() => setIsRefreshing(false), 500);
       })
       .catch((error) => {
-        console.error("Refetch failed:", error);
         setIsRefreshing(false);
       });
   };

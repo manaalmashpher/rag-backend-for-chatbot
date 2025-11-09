@@ -63,7 +63,6 @@ async def search_documents(
         cached_result = _get_cached_result(cache_key)
         
         if cached_result:
-            logger.info(f"Cache hit for query: {search_request.q[:50]}...")
             return cached_result
         
         # Perform hybrid search with top_k=50 for reranking
@@ -117,7 +116,6 @@ async def search_documents(
         for result in search_metadata['results']:
             # Generate snippet with query highlighting
             result_text = result.get('text', '')
-            logger.debug(f"Result has text field: {bool(result_text)}, length: {len(result_text) if result_text else 0}")
             snippet = _generate_snippet(result_text, search_request.q)
             
             # Ensure method is valid (must be 1-8 per schema)
@@ -166,8 +164,6 @@ async def search_documents(
             )
         except ValidationError as ve:
             logger.error(f"Response validation failed: {str(ve)}")
-            logger.error(f"Validation errors: {ve.errors()}")
-            logger.error(f"Formatted results sample: {formatted_results[0] if formatted_results else 'No results'}")
             error_response = SearchError(
                 error="Response validation failed",
                 error_code="VALIDATION_ERROR",

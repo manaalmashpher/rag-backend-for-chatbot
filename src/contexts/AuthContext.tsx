@@ -62,7 +62,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({
           }
         }
       } catch (error) {
-        console.error("Auth check failed:", error);
         localStorage.removeItem("auth_token");
         localStorage.removeItem("refresh_token");
       } finally {

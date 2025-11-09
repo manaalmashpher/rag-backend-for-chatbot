@@ -100,24 +100,14 @@ export const authService = {
     confirmPassword: string
   ): Promise<AuthResponse> {
     try {
-      console.log("Attempting registration with API_BASE_URL:", API_BASE_URL);
-      console.log("Registration data:", {
-        email,
-        password: "***",
-        confirm_password: "***",
-      });
-
       const response = await authClient.post("/api/auth/register", {
         email,
         password,
         confirm_password: confirmPassword,
       });
 
-      console.log("Registration response:", response.data);
       return response.data;
     } catch (error: any) {
-      console.error("Registration error:", error);
-      console.error("Error response:", error.response?.data);
       return {
         success: false,
         error: error.response?.data?.detail || "Registration failed",

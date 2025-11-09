@@ -115,24 +115,13 @@ class IngestionService:
             # Load file content
             file_path = os.path.join(settings.storage_path, f"{document.sha256}.{self._get_file_extension(document.mime)}")
             logger.info(f"Looking for file: {file_path}")
-            logger.info(f"Storage path: {settings.storage_path}")
             logger.info(f"Storage path exists: {os.path.exists(settings.storage_path)}")
             
             if not os.path.exists(file_path):
-                # List what's actually in the directory
-                try:
-                    if os.path.exists(settings.storage_path):
-                        all_files = os.listdir(settings.storage_path)
-                        logger.warning(f"Files in storage directory: {all_files}")
-                except Exception as e:
-                    logger.error(f"Failed to list directory: {e}")
-                
                 ingestion.status = "failed"
                 ingestion.error = f"File not found in storage: {file_path}"
                 self._safe_commit(db, ingestion_id)
                 return False
-            
-            logger.info(f"File found and ready to load")
             
             with open(file_path, 'rb') as f:
                 file_content = f.read()
@@ -159,7 +148,6 @@ class IngestionService:
             ).all()
             
             if existing_chunks:
-                logger.info(f"Cleaning up {len(existing_chunks)} existing chunks for document {doc_id}, method {ingestion_method}")
                 for chunk in existing_chunks:
                     db.delete(chunk)
                 self._safe_commit(db)
@@ -204,7 +192,6 @@ class IngestionService:
                 if (batch_start > 0 and batch_start % (batch_size * 2) == 0) or \
                    (total_chunks > 200 and batch_start > 0 and batch_start % batch_size == 0):
                     db.expire_all()
-                    logger.debug(f"Refreshed session during chunk insertion at {batch_start}/{total_chunks}")
                 
                 for chunk_data in batch:
                     chunk = Chunk(
@@ -236,8 +223,6 @@ class IngestionService:
                 # This prevents DetachedInstanceError when accessing chunk.id later
                 for chunk in stored_chunks[-len(batch):]:  # Only the chunks from this batch
                     chunk_ids.append(chunk.id)
-                
-                logger.debug(f"Committed chunk batch {batch_start}-{batch_end}/{total_chunks}")
             
             # Update status to embedding
             ingestion.status = "embedding"
@@ -252,7 +237,6 @@ class IngestionService:
             # Check memory before embedding generation
             process = psutil.Process(os.getpid())
             memory_before = process.memory_info().rss / 1024 / 1024
-            logger.info(f"Memory before embedding generation: {memory_before:.1f}MB")
             
             # Special handling for dense documents (like markdown files)
             is_dense_document = len(chunk_texts) > 11 or len(text) > 10000  # More than 25 chunks or 25k chars
@@ -264,7 +248,7 @@ class IngestionService:
                     return False
             # Check if we have too many chunks for current memory
             elif len(chunk_texts) > 15 and memory_before > 1000:
-                logger.warning(f"Large document with {len(chunk_texts)} chunks and {memory_before:.1f}MB memory - processing in smaller batches")
+                logger.info(f"Large document with {len(chunk_texts)} chunks and {memory_before:.1f}MB memory - processing in smaller batches")
                 # Process in smaller batches to prevent OOM
                 embeddings = []
                 batch_size = 1  # Single chunk processing for memory-constrained environments
@@ -291,8 +275,6 @@ class IngestionService:
             
             # Check memory after embedding generation
             memory_after = process.memory_info().rss / 1024 / 1024
-            memory_increase = memory_after - memory_before
-            logger.info(f"Memory after embedding generation: {memory_after:.1f}MB (increase: {memory_increase:.1f}MB)")
             
             # Prepare payloads for Qdrant using actual chunk IDs
             payloads = []
@@ -323,12 +305,9 @@ class IngestionService:
             # Clean up existing vectors in Qdrant for this document and method
             try:
                 self.qdrant_service.delete_vectors_by_doc_id(doc_id, ingestion_method)
-                logger.info(f"Cleaned up existing vectors in Qdrant for document {doc_id}, method {ingestion_method}")
             except Exception as e:
                 # This is expected for the first document upload when no index exists yet
-                if "Index required but not found" in str(e):
-                    logger.info(f"No existing vectors to clean up for document {doc_id} (first upload)")
-                else:
+                if "Index required but not found" not in str(e):
                     logger.warning(f"Failed to clean up existing vectors in Qdrant: {e}")
             
             # Refresh session before Qdrant operation
@@ -450,7 +429,6 @@ class IngestionService:
             
             # Clear embedding cache to free memory
             self.embedding_service.clear_cache()
-            logger.info("Performed final cleanup after document processing")
             
             # Refresh session before final commit to prevent prepared state
             db.expire_all()
@@ -495,8 +473,6 @@ class IngestionService:
         embeddings = []
         total_chunks = len(chunk_texts)
         
-        logger.info(f"Processing {total_chunks} chunks one by one for dense document")
-        
         for i, chunk_text in enumerate(chunk_texts):
             try:
                 # Process single chunk
@@ -509,8 +485,6 @@ class IngestionService:
                 
                 # Check memory after every chunk for dense documents
                 memory_after = process.memory_info().rss / 1024 / 1024
-                if (i + 1) % 3 == 0:  # Log every 3 chunks
-                    logger.info(f"Processed {i + 1}/{total_chunks} chunks, memory: {memory_after:.1f}MB")
                 
                 if memory_after > 1500:  # Very conservative threshold for Railway
                     logger.error(f"Memory usage too high during dense document processing: {memory_after:.1f}MB")
@@ -532,7 +506,6 @@ class IngestionService:
                         from app.services.embeddings import EmbeddingService
                         embedding_service = EmbeddingService()
                         embedding_service.clear_cache()
-                        logger.info("Cleared embedding cache due to high memory usage")
                 
                 # Refresh session periodically to prevent prepared state (every 50 chunks)
                 if (i + 1) % 50 == 0:
@@ -563,7 +536,6 @@ class IngestionService:
         from app.services.embeddings import EmbeddingService
         embedding_service = EmbeddingService()
         embedding_service.clear_cache()
-        logger.info("Performed final cleanup after dense document processing")
         
         return embeddings
 

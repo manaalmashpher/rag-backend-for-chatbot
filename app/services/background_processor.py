@@ -39,7 +39,6 @@ class BackgroundProcessor:
             return
         
         self.processing = True
-        logger.info("Starting background document processor")
         
         try:
             while self.processing:
@@ -185,8 +184,6 @@ class BackgroundProcessor:
                     db.commit()
                     logger.info(f"Retrying ingestion {ingestion.id} (attempt {ingestion.retry_count}/{self.max_retries})")
                 
-                memory_str = f"{memory_mb:.1f}MB" if memory_mb else "N/A"
-                logger.info(f"Processing ingestion {ingestion.id} (memory: {memory_str})")
                 start_time = time.time()
                 
                 try:
@@ -203,9 +200,7 @@ class BackgroundProcessor:
                     
                     processing_time = time.time() - start_time
                     work_processed = True  # We attempted/started processing
-                    if success:
-                        logger.info(f"Successfully processed ingestion {ingestion.id} in {processing_time:.2f}s")
-                    else:
+                    if not success:
                         logger.error(f"Failed to process ingestion {ingestion.id} in {processing_time:.2f}s")
                         
                 except asyncio.TimeoutError:
@@ -224,11 +219,7 @@ class BackgroundProcessor:
                 except Exception as e:
                     processing_time = time.time() - start_time
                     work_processed = True  # We attempted processing (error occurred)
-                    logger.error(f"Error processing ingestion {ingestion.id} after {processing_time:.2f}s: {e}")
-                    logger.error(f"Error type: {type(e).__name__}")
-                    logger.error(f"Error details: {str(e)}")
-                    import traceback
-                    logger.error(f"Full traceback: {traceback.format_exc()}")
+                    logger.error(f"Error processing ingestion {ingestion.id} after {processing_time:.2f}s: {e}", exc_info=True)
                     # Update status to failed
                     try:
                         ingestion.status = "failed"
@@ -266,11 +257,8 @@ class BackgroundProcessor:
             process = psutil.Process(os.getpid())
             memory_mb = process.memory_info().rss / 1024 / 1024
             
-            logger.info(f"Memory usage before cleanup: {memory_mb:.1f}MB")
-            
             # Reduced garbage collection passes to save CPU (1 pass instead of 3)
-            collected = gc.collect()
-            logger.debug(f"Garbage collection freed {collected} objects")
+            gc.collect()
             
             # Clear embedding cache if it's getting too large
             from app.services.embeddings import EmbeddingService
@@ -280,7 +268,6 @@ class BackgroundProcessor:
                 # Smart cache management for all-mpnet-base-v2 (heavier model)
                 if cache_size > 200:  # Clear cache if more than 200 entries (reasonable threshold)
                     embedding_service.clear_cache()
-                    logger.info(f"Cleared embedding cache ({cache_size} entries)")
                 elif cache_size > 50:  # Log warning for large cache
                     logger.warning(f"Embedding cache is large: {cache_size} entries")
             
@@ -289,12 +276,6 @@ class BackgroundProcessor:
             
             # Get memory usage after cleanup
             memory_mb_after = process.memory_info().rss / 1024 / 1024
-            memory_freed = memory_mb - memory_mb_after
-            
-            if memory_freed > 30:  # Only log if significant memory was freed
-                logger.info(f"Memory usage after cleanup: {memory_mb_after:.1f}MB (freed {memory_freed:.1f}MB)")
-            else:
-                logger.debug(f"Memory usage after cleanup: {memory_mb_after:.1f}MB (freed {memory_freed:.1f}MB)")
             
         except Exception as e:
             logger.warning(f"Memory cleanup failed: {e}")
@@ -316,8 +297,6 @@ class BackgroundProcessor:
                     logger.warning(f"High memory usage detected: {memory_mb:.1f}MB (threshold: {self.max_memory_mb}MB)")
                     await self._emergency_cleanup()
                     self._last_emergency_cleanup = current_time
-                else:
-                    logger.debug(f"High memory usage detected but cleanup was recent: {memory_mb:.1f}MB")
                 
         except Exception as e:
             logger.warning(f"Memory check failed: {e}")

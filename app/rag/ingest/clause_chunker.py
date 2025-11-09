@@ -128,7 +128,6 @@ class ClauseChunker:
                     tokenizer_name = 'sentence-transformers/all-MiniLM-L6-v2'
                 
                 self._tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
-                logger.info(f"Initialized tokenizer: {tokenizer_name}")
             except Exception as e:
                 logger.warning(f"Failed to load tokenizer {self.model_name}: {e}. Using character-based estimation.")
                 self._tokenizer = None
@@ -167,25 +166,20 @@ class ClauseChunker:
         Returns:
             List of Chunk objects with rich metadata
         """
-        logger.info(f"Starting clause chunking for doc_id={doc_id}, source={source_name}")
-        
         # Normalize and clean text
         normalized_text = self._normalize_text(doc_text)
         
         # Detect section labels (e.g., "Tenth Section: Research and Innovation")
         section_labels = self._detect_section_labels(normalized_text)
-        logger.info(f"Detected {len(section_labels)} section labels")
         
         # Detect clause headings
         headings = self._detect_headings(normalized_text)
-        logger.info(f"Detected {len(headings)} clause headings")
         
         # Build hierarchy map
         hierarchy_map = self._build_hierarchy(headings, section_labels)
         
         # Split into blocks at clause boundaries
         blocks = self._split_into_blocks(normalized_text, headings, hierarchy_map, pages)
-        logger.info(f"Created {len(blocks)} text blocks")
         
         # Process blocks into chunks with token size control
         chunks = self._process_blocks_to_chunks(blocks, doc_id, source_name)
@@ -231,7 +225,6 @@ class ClauseChunker:
                 label = match.group(1)
                 content = match.group(2)
                 labels.append((i, label, content))
-                logger.debug(f"Detected section label at line {i}: {label}")
         
         return labels
     

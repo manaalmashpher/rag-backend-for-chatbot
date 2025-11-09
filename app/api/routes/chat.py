@@ -41,9 +41,7 @@ async def chat_endpoint(
     try:
         logger.info(f"Chat request received: conversation_id={chat_request.conversation_id}, message_length={len(chat_request.message)}")
         
-        # Validate request (validation is handled by Pydantic, but we log it)
-        logger.debug(f"Validated request: conversation_id={chat_request.conversation_id}")
-        
+
         # Integrate with chat orchestrator service
         # Step 1: Retrieve candidates
         candidates = chat_orchestrator.retrieve_candidates(chat_request.message, top_k=20)
@@ -51,11 +49,9 @@ async def chat_endpoint(
         
         # Step 2: Rerank candidates
         reranked = chat_orchestrator.rerank(chat_request.message, candidates, top_k=8)
-        logger.info(f"Reranked to {len(reranked)} candidates")
         
         # Step 3: Synthesize answer
         answer = chat_orchestrator.synthesize_answer(chat_request.message, reranked)
-        logger.info("Answer synthesis completed")
         
         # Build citations from reranked chunks
         citations = []

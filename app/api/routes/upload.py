@@ -4,6 +4,7 @@ File upload API endpoint
 
 import hashlib
 import os
+import logging
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -15,6 +16,7 @@ from app.services.scanned_pdf_detector import ScannedPDFDetector
 from app.services.qdrant import QdrantService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/upload", response_model=UploadResponse)
 async def upload_file(
@@ -92,13 +94,8 @@ async def upload_file(
         else:
             # No chunks found - document is orphaned or only has failed ingestions
             # Clean up all related data and allow re-upload
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Found document {existing_doc.id} with same hash but no chunks, cleaning up for re-upload")
-            
             # Delete all ingestions for this document (including failed ones)
-            ingestions_deleted = db.query(Ingestion).filter(Ingestion.doc_id == existing_doc.id).delete()
-            logger.info(f"Deleted {ingestions_deleted} ingestions for document {existing_doc.id}")
+            db.query(Ingestion).filter(Ingestion.doc_id == existing_doc.id).delete()
             
             # Delete the orphaned document and its physical file
             try:
@@ -106,13 +103,11 @@ async def upload_file(
                 file_path = os.path.join(settings.storage_path, f"{existing_doc.sha256}.{file_extension}")
                 if os.path.exists(file_path):
                     os.remove(file_path)
-                    logger.info(f"Deleted orphaned physical file: {file_path}")
             except Exception as e:
                 logger.warning(f"Failed to delete orphaned physical file: {e}")
             
             db.delete(existing_doc)
             db.commit()
-            logger.info(f"Deleted orphaned document {existing_doc.id}, allowing re-upload")
     
     # Check for scanned PDF
     if file.content_type == 'application/pdf':
@@ -219,8 +214,6 @@ async def delete_document(
         chunks = db.query(Chunk).filter(Chunk.doc_id == doc_id).all()
         ingestions = db.query(Ingestion).filter(Ingestion.doc_id == doc_id).all()
         
-        logger.info(f"Deleting document {doc_id}: {len(chunks)} chunks, {len(ingestions)} ingestions")
-        
         # Delete from Qdrant using doc_id (with fallback support)
         qdrant_vectors_deleted = 0
         try:
@@ -229,7 +222,6 @@ async def delete_document(
                 if chunks:
                     # Get methods from chunks (more reliable than ingestions)
                     methods = list(set([chunk.method for chunk in chunks]))
-                    logger.info(f"Deleting vectors for methods: {methods}")
                     
                     for method in methods:
                         try:
@@ -239,7 +231,6 @@ async def delete_document(
                         except Exception as method_error:
                             logger.warning(f"Failed to delete vectors for method {method}: {method_error}")
                             # Continue with other methods even if one fails
-                    logger.info(f"Completed Qdrant deletion for document {doc_id}")
                 else:
                     logger.warning(f"No chunks found for document {doc_id}, skipping Qdrant deletion")
             else:
@@ -263,14 +254,10 @@ async def delete_document(
         try:
             file_extension = _get_file_extension(document.mime)
             file_path = os.path.join(settings.storage_path, f"{document.sha256}.{file_extension}")
-            logger.info(f"Attempting to delete file: {file_path}")
             
             if os.path.exists(file_path):
                 os.remove(file_path)
                 file_deleted = True
-                logger.info(f"Successfully deleted physical file: {file_path}")
-            else:
-                logger.warning(f"Physical file not found: {file_path}")
         except Exception as e:
             logger.error(f"Failed to delete physical file {file_path}: {e}")
         

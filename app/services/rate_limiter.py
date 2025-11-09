@@ -132,7 +132,6 @@ class RateLimiter:
         self.storage.clear()
         # Reset the rate limit settings to ensure they're current
         self.rate_limit_qps = getattr(settings, 'rate_limit_qps', 5)
-        logger.info("Rate limiter force reset completed")
     
     def reset_client(self, client_id: str):
         """
