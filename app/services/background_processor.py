@@ -21,7 +21,7 @@ class BackgroundProcessor:
     def __init__(self):
         self.processing = False
         self.ingestion_service = IngestionService()
-        self.max_processing_time = 300  # 5 minutes max per document
+        self.max_processing_time = 1000  # 16 minutes max per document (increased for large documents with clause-aware chunking)
         self.poll_interval_idle = 30  # Check every 30 seconds when idle (reduced CPU usage)
         self.poll_interval_active = 12  # Check every 5 seconds when processing
         self.max_retries = 3  # Max retries for failed processing
@@ -116,8 +116,8 @@ class BackgroundProcessor:
                     Ingestion.finished_at < retry_time
                 ).limit(1).all()
             
-            # Get stuck ingestions in embedding/indexing status (started more than 6 minutes ago)
-            stuck_time = datetime.utcnow() - timedelta(minutes=6)
+            # Get stuck ingestions in embedding/indexing status (started more than 15 minutes ago)
+            stuck_time = datetime.utcnow() - timedelta(minutes=15)
             try:
                 stuck_ingestions = db.query(Ingestion).filter(
                     Ingestion.status.in_(["embedding", "indexing"]),

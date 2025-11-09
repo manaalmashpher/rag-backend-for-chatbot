@@ -17,6 +17,10 @@ const CHUNKING_METHODS = [
   { value: 6, label: "Method 6: Overlapping chunks" },
   { value: 7, label: "Method 7: Context-aware chunks" },
   { value: 8, label: "Method 8: Adaptive chunks" },
+  {
+    value: 9,
+    label: "Method 9: Clause-aware (hierarchy-aware for standards/PDFs)",
+  },
 ];
 
 const ALLOWED_FILE_TYPES = {

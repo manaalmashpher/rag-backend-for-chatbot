@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     embedding_model: str = "all-mpnet-base-v2"  # Free, high quality, 768 dimensions
     embed_dim: int = 768
     
+    # Chunking Configuration
+    rag_chunk_target_tokens: Optional[int] = None  # Override default token targets
+    rag_chunk_overlap_tokens: int = 50  # Token overlap between sibling chunks
+    rag_backfill_batch_size: int = 16  # Batch size for backfill embedding generation
+    
     # Upload
     max_upload_mb: int = 20
     storage_path: str = "./uploads"
@@ -58,6 +63,10 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     rate_limit_qps: int = 20  # Requests per minute per IP
     rate_limit_burst: int = 25  # Burst allowance
+    
+    # RAG Configuration
+    rag_enable_hybrid: bool = True  # Enable hybrid search
+    rag_enable_rerank: bool = True  # Enable reranking
     
     class Config:
         env_file = ".env"

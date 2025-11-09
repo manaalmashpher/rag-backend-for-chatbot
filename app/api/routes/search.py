@@ -9,10 +9,11 @@ import time
 import logging
 import hashlib
 from functools import lru_cache
+from pydantic import ValidationError
 
 from app.services.hybrid_search import HybridSearchService
 from app.services.reranker import RerankerService
-from app.schemas.search import SearchRequest, SearchResponse, SearchError
+from app.schemas.search import SearchRequest, SearchResponse, SearchError, SearchMetadata
 from app.core.database import get_db
 from app.core.config import settings
 from sqlalchemy.orm import Session
@@ -119,16 +120,25 @@ async def search_documents(
             logger.debug(f"Result has text field: {bool(result_text)}, length: {len(result_text) if result_text else 0}")
             snippet = _generate_snippet(result_text, search_request.q)
             
+            # Ensure method is valid (must be 1-8 per schema)
+            method = result.get('method')
+            if not method or method < 1 or method > 8:
+                method = 1  # Default to 1 if invalid or missing
+            
+            # Ensure score is within valid range (0.0-1.0 per schema)
+            score = float(result.get('fused_score', 0.0))
+            score = max(0.0, min(1.0, score))  # Clamp to [0.0, 1.0]
+            
             formatted_result = {
                 'chunk_id': str(result.get('chunk_id', '')),
                 'doc_id': str(result.get('doc_id', '')),
-                'method': int(result.get('method', 0)),
+                'method': int(method),
                 'page_from': int(result.get('page_from')) if result.get('page_from') else None,
                 'page_to': int(result.get('page_to')) if result.get('page_to') else None,
                 'hash': str(result.get('hash', '')),
                 'source': str(result.get('source', '')),
                 'snippet': str(snippet) if snippet else None,
-                'score': float(result.get('fused_score', 0.0)),
+                'score': score,
                 'search_type': search_metadata.get('search_type', 'hybrid')
             }
             
@@ -138,30 +148,56 @@ async def search_documents(
             
             formatted_results.append(formatted_result)
         
-        # Log search query (async to not block response)
-        _log_search_query_async(db, search_request.q, search_metadata, latency_ms)
+        # Create response first (before any database operations that might fail)
+        try:
+            response = SearchResponse(
+                results=formatted_results,
+                total_results=len(formatted_results),
+                query=search_request.q,
+                limit=search_request.limit,
+                search_type=search_metadata.get('search_type', 'hybrid'),
+                metadata=SearchMetadata(
+                    semantic_weight=search_metadata['fusion_weights']['semantic'],
+                    lexical_weight=search_metadata['fusion_weights']['lexical'],
+                    individual_results=search_metadata['individual_results'],
+                    latency_ms=latency_ms
+                ),
+                latency_ms=latency_ms
+            )
+        except ValidationError as ve:
+            logger.error(f"Response validation failed: {str(ve)}")
+            logger.error(f"Validation errors: {ve.errors()}")
+            logger.error(f"Formatted results sample: {formatted_results[0] if formatted_results else 'No results'}")
+            error_response = SearchError(
+                error="Response validation failed",
+                error_code="VALIDATION_ERROR",
+                details={"validation_errors": str(ve.errors())}
+            )
+            raise HTTPException(status_code=400, detail=error_response.model_dump())
         
-        # Create response
-        response = SearchResponse(
-            results=formatted_results,
-            total_results=len(formatted_results),
-            query=search_request.q,
-            limit=search_request.limit,
-            search_type=search_metadata.get('search_type', 'hybrid'),
-            metadata={
-                'semantic_weight': search_metadata['fusion_weights']['semantic'],
-                'lexical_weight': search_metadata['fusion_weights']['lexical'],
-                'individual_results': search_metadata['individual_results'],
-                'latency_ms': latency_ms
-            },
-            latency_ms=latency_ms
-        )
+        # Log search query (async to not block response) - do this after creating response
+        # Use background task or just catch errors silently
+        try:
+            _log_search_query_async(db, search_request.q, search_metadata, latency_ms)
+        except Exception as log_error:
+            # Don't fail the search if logging fails
+            logger.warning(f"Failed to log search query (non-critical): {str(log_error)}")
         
         # Cache the result
         _cache_result(cache_key, response)
         
         logger.info(f"Search completed: {len(formatted_results)} results in {latency_ms}ms for query: {search_request.q[:50]}...")
         return response
+        
+    except ValidationError as ve:
+        # Pydantic validation error
+        logger.error(f"Request validation failed: {str(ve)}")
+        error_response = SearchError(
+            error="Request validation failed",
+            error_code="VALIDATION_ERROR",
+            details={"validation_errors": str(ve.errors())}
+        )
+        raise HTTPException(status_code=400, detail=error_response.model_dump())
         
     except ValueError as e:
         # Validation error
@@ -300,6 +336,15 @@ def _log_search_query_async(db: Session, query: str, metadata: dict, latency_ms:
         latency_ms: Search latency in milliseconds
     """
     try:
+        # Check if session is still valid before using it
+        from sqlalchemy.exc import InvalidRequestError
+        try:
+            # Try to refresh the session to check if it's still valid
+            db.expire_all()
+        except (InvalidRequestError, Exception) as session_error:
+            logger.warning(f"Database session invalid for logging, skipping: {str(session_error)}")
+            return
+        
         search_log = SearchLog(
             query=query,
             params_json={
@@ -314,3 +359,7 @@ def _log_search_query_async(db: Session, query: str, metadata: dict, latency_ms:
     except Exception as e:
         logger.warning(f"Failed to log search query: {str(e)}")
         # Don't fail the search if logging fails
+        try:
+            db.rollback()
+        except:
+            pass

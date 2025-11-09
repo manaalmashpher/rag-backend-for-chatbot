@@ -49,8 +49,26 @@ class Chunk(Base):
     text = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
+    # New hierarchy-aware metadata fields
+    section_id = Column(String(100), nullable=True, index=True)  # e.g., "5.22.1"
+    section_id_alias = Column(String(100), nullable=True, index=True)  # e.g., "5_22_1"
+    title = Column(String(500), nullable=True)  # Cleaned clause title
+    parent_titles = Column(JSON, nullable=True)  # List of parent titles (outermost → immediate)
+    level = Column(Integer, nullable=True)  # Dot count + 1
+    list_items = Column(Boolean, nullable=False, default=False)
+    has_supporting_docs = Column(Boolean, nullable=False, default=False)
+    token_count = Column(Integer, nullable=True)
+    text_norm = Column(Text, nullable=True)  # Normalized text for lexical search
+    
     # Relationships
     document = relationship("Document", back_populates="chunks")
+    
+    # Indexes for efficient querying
+    # Note: GIN index for parent_titles is created via migration script for Postgres
+    __table_args__ = (
+        Index('idx_chunks_section_id', 'section_id'),
+        Index('idx_chunks_section_id_alias', 'section_id_alias'),
+    )
 
 class SearchLog(Base):
     __tablename__ = "search_logs"

@@ -101,7 +101,8 @@ class VectorSearchService:
                         'source': str(payload.get('source', '')),
                         'text': text,
                         'score': float(result.get('score', 0.0)),
-                        'search_type': 'semantic'
+                        'search_type': 'semantic',
+                        'payload': payload  # Include full payload for metadata-based boosting
                     }
                     formatted_results.append(formatted_result)
             finally:

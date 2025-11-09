@@ -92,12 +92,14 @@ class RerankerService:
         """
         Build query-text pairs for cross-encoder prediction
         
+        Includes metadata (section_id, title, parent_titles) in the text for better context
+        
         Args:
             query: Search query string
             candidates: List of candidate results
-            
+        
         Returns:
-            List of (query, text) tuples
+            List of (query, text_with_metadata) tuples
         """
         pairs = []
         
@@ -109,16 +111,59 @@ class RerankerService:
                 text = candidate.get('snippet', '') or candidate.get('content', '')
             
             if text:
-                # Truncate text to max_chars for memory management
-                if len(text) > self.max_chars:
-                    text = text[:self.max_chars]
-                    logger.debug(f"Truncated text from {len(candidate.get('text', ''))} to {self.max_chars} chars")
+                # Build enriched text with metadata for better reranking
+                enriched_text = self._enrich_text_with_metadata(text, candidate)
                 
-                pairs.append((query, text))
+                # Truncate text to max_chars for memory management
+                if len(enriched_text) > self.max_chars:
+                    enriched_text = enriched_text[:self.max_chars]
+                    logger.debug(f"Truncated enriched text from {len(text)} to {self.max_chars} chars")
+                
+                pairs.append((query, enriched_text))
             else:
                 logger.warning(f"Candidate missing text field: {candidate.get('chunk_id', 'unknown')}")
         
         return pairs
+    
+    def _enrich_text_with_metadata(self, text: str, candidate: Dict[str, Any]) -> str:
+        """
+        Enrich text with metadata for better reranking context
+        
+        Args:
+            text: Original chunk text
+            candidate: Candidate result with metadata
+        
+        Returns:
+            Enriched text string with metadata context
+        """
+        # Extract metadata from candidate or payload
+        payload = candidate.get('payload', {})
+        section_id = payload.get('section_id') or candidate.get('section_id')
+        title = payload.get('title') or candidate.get('title')
+        parent_titles = payload.get('parent_titles') or candidate.get('parent_titles', [])
+        
+        # Build metadata context string
+        metadata_parts = []
+        
+        if parent_titles:
+            # Add parent hierarchy context
+            parent_context = ' > '.join(parent_titles)
+            metadata_parts.append(f"Context: {parent_context}")
+        
+        if section_id:
+            metadata_parts.append(f"Section: {section_id}")
+        
+        if title:
+            metadata_parts.append(f"Title: {title}")
+        
+        # Combine metadata with text
+        if metadata_parts:
+            metadata_str = ' | '.join(metadata_parts)
+            enriched = f"{metadata_str}\n\n{text}"
+        else:
+            enriched = text
+        
+        return enriched
     
     def _predict_scores_batched(self, pairs: List[tuple]) -> List[float]:
         """

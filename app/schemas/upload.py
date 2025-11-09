@@ -7,7 +7,7 @@ from typing import Optional
 from enum import IntEnum
 
 class ChunkingMethod(IntEnum):
-    """Predefined chunking methods 1-8"""
+    """Predefined chunking methods 1-9"""
     FIXED_TOKEN = 1
     SENTENCE_BASED = 2
     PARAGRAPH_BASED = 3
@@ -16,6 +16,7 @@ class ChunkingMethod(IntEnum):
     RECURSIVE_SPLITTER = 6
     TABLE_LAYOUT_BASED = 7
     HIERARCHICAL = 8
+    CLAUSE_AWARE = 9  # Hierarchy-aware clause chunking for standards/PDFs
     
     def get_description(self) -> str:
         """Get human-readable description of the chunking method"""
@@ -27,7 +28,8 @@ class ChunkingMethod(IntEnum):
             ChunkingMethod.SEMANTIC_SIMILARITY: "Semantic similarity - Boundary by topic shift; ~700–1000 tokens. Higher quality; tune threshold.",
             ChunkingMethod.RECURSIVE_SPLITTER: "Recursive splitter - Balanced chunk sizes through recursive splitting.",
             ChunkingMethod.TABLE_LAYOUT_BASED: "Table layout based - PDF-specific layout analysis for better chunking.",
-            ChunkingMethod.HIERARCHICAL: "Hierarchical - Combines multiple strategies for optimal document segmentation."
+            ChunkingMethod.HIERARCHICAL: "Hierarchical - Combines multiple strategies for optimal document segmentation.",
+            ChunkingMethod.CLAUSE_AWARE: "Clause-aware - Hierarchy-aware chunking at clause headings (e.g., 5.22.1) with parent context and list preservation."
         }
         return descriptions.get(self, "Unknown chunking method")
 

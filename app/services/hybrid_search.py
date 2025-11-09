@@ -37,6 +37,7 @@ class HybridSearchService:
         try:
             # Perform both searches sequentially to prevent memory spikes
             import time
+            import re
             
             semantic_results = []
             lexical_results = []
@@ -60,8 +61,25 @@ class HybridSearchService:
                 logger.error("Both vector and lexical search failed")
                 return []
             
-            # Fuse results
-            fused_results = self._fuse_results(semantic_results, lexical_results)
+            # Extract section_id pattern from query for boosting
+            section_id_pattern = re.search(r'\d+(?:\.\d+)+', query)
+            query_section_id = section_id_pattern.group(0) if section_id_pattern else None
+            query_section_id_alias = query_section_id.replace('.', '_') if query_section_id else None
+            
+            # Check for supporting documents keywords
+            supporting_docs_keywords = ['supporting documents', 'supporting evidence', 'evidence', 'indicators', 'objectives']
+            has_supporting_docs_query = any(
+                keyword.lower() in query.lower() for keyword in supporting_docs_keywords
+            )
+            
+            # Fuse results with boosts
+            fused_results = self._fuse_results(
+                semantic_results,
+                lexical_results,
+                query_section_id=query_section_id,
+                query_section_id_alias=query_section_id_alias,
+                has_supporting_docs_query=has_supporting_docs_query
+            )
             
             # Return top results
             final_results = fused_results[:limit]
@@ -89,19 +107,33 @@ class HybridSearchService:
             logger.warning(f"Lexical search error: {str(e)}")
             return []
     
-    def _fuse_results(self, semantic_results: List[Dict[str, Any]], lexical_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _fuse_results(
+        self,
+        semantic_results: List[Dict[str, Any]],
+        lexical_results: List[Dict[str, Any]],
+        query_section_id: Optional[str] = None,
+        query_section_id_alias: Optional[str] = None,
+        has_supporting_docs_query: bool = False
+    ) -> List[Dict[str, Any]]:
         """
-        Fuse semantic and lexical search results using configurable weights
+        Fuse semantic and lexical search results using configurable weights with boosts
         
         Args:
             semantic_results: Results from vector search
             lexical_results: Results from lexical search
-            
+            query_section_id: Section ID extracted from query (e.g., "5.22.1")
+            query_section_id_alias: Section ID alias (e.g., "5_22_1")
+            has_supporting_docs_query: True if query mentions supporting documents
+        
         Returns:
             List of fused results ranked by combined score
         """
         # Create a dictionary to store fused results by chunk_id
         fused_dict = {}
+        
+        # Boost factors
+        SECTION_ID_BOOST = 0.15  # 15% boost for exact section_id match
+        SUPPORTING_DOCS_BOOST = 0.10  # 10% boost for supporting docs chunks
         
         # Process semantic results
         for result in semantic_results:
@@ -110,6 +142,23 @@ class HybridSearchService:
                 # Normalize semantic score to 0-1 range
                 normalized_score = max(0.0, min(1.0, result.get('score', 0.0)))
                 fused_score = normalized_score * self.semantic_weight
+                
+                # Apply boosts based on metadata
+                payload = result.get('payload', {})
+                
+                # Section ID boost
+                if query_section_id:
+                    result_section_id = payload.get('section_id')
+                    result_section_id_alias = payload.get('section_id_alias')
+                    if (result_section_id == query_section_id or
+                        result_section_id_alias == query_section_id_alias):
+                        fused_score += SECTION_ID_BOOST
+                        logger.debug(f"Applied section_id boost to chunk {chunk_id}")
+                
+                # Supporting docs boost
+                if has_supporting_docs_query and payload.get('has_supporting_docs', False):
+                    fused_score += SUPPORTING_DOCS_BOOST
+                    logger.debug(f"Applied supporting_docs boost to chunk {chunk_id}")
                 
                 fused_dict[chunk_id] = {
                     **result,
@@ -127,18 +176,46 @@ class HybridSearchService:
                 normalized_score = max(0.0, min(1.0, result.get('score', 0.0)))
                 lexical_score = normalized_score * self.lexical_weight
                 
+                # Apply boosts (need to fetch metadata from DB or payload)
+                # For lexical results, we may not have payload, so boosts are applied in fusion
                 if chunk_id in fused_dict:
                     # Combine with existing semantic result
                     fused_dict[chunk_id]['lexical_score'] = normalized_score
                     fused_dict[chunk_id]['fused_score'] += lexical_score
                     fused_dict[chunk_id]['sources'].append('lexical')
+                    
+                    # Apply boosts if not already applied (for lexical-only metadata)
+                    payload = result.get('payload', {})
+                    if query_section_id:
+                        result_section_id = payload.get('section_id')
+                        result_section_id_alias = payload.get('section_id_alias')
+                        if (result_section_id == query_section_id or
+                            result_section_id_alias == query_section_id_alias):
+                            fused_dict[chunk_id]['fused_score'] += SECTION_ID_BOOST
+                    
+                    if has_supporting_docs_query and payload.get('has_supporting_docs', False):
+                        fused_dict[chunk_id]['fused_score'] += SUPPORTING_DOCS_BOOST
                 else:
                     # New lexical-only result
+                    fused_score = lexical_score
+                    
+                    # Apply boosts
+                    payload = result.get('payload', {})
+                    if query_section_id:
+                        result_section_id = payload.get('section_id')
+                        result_section_id_alias = payload.get('section_id_alias')
+                        if (result_section_id == query_section_id or
+                            result_section_id_alias == query_section_id_alias):
+                            fused_score += SECTION_ID_BOOST
+                    
+                    if has_supporting_docs_query and payload.get('has_supporting_docs', False):
+                        fused_score += SUPPORTING_DOCS_BOOST
+                    
                     fused_dict[chunk_id] = {
                         **result,
                         'semantic_score': 0.0,
                         'lexical_score': normalized_score,
-                        'fused_score': lexical_score,
+                        'fused_score': fused_score,
                         'sources': ['lexical']
                     }
         

@@ -127,6 +127,8 @@ class ChunkingService:
                 result = self._method_7_topic_based(text, **kwargs)
             elif method == 8:
                 result = self._method_8_adaptive(text, **kwargs)
+            elif method == 9:
+                result = self._method_9_clause_aware(text, **kwargs)
             else:
                 raise ValueError(f"Invalid chunking method: {method}")
             
@@ -147,14 +149,22 @@ class ChunkingService:
         
         Args:
             text: Input text to chunk
-            method: Chunking method (1-8)
+            method: Chunking method (1-9)
             pages: List of page dictionaries with page_number and text
-            **kwargs: Additional parameters for specific methods
+            **kwargs: Additional parameters for specific methods (including doc_id, source_name for method 9)
         
         Returns:
             List of chunk dictionaries with text, metadata, and page info
         """
-        # Get base chunks
+        # For method 9 (clause-aware), pass pages directly
+        if method == 9:
+            # Ensure doc_id and source_name are in kwargs
+            if 'doc_id' not in kwargs or 'source_name' not in kwargs:
+                logger.warning("Method 9 requires doc_id and source_name in kwargs")
+            kwargs['pages'] = pages
+            return self.chunk_text(text, method, **kwargs)
+        
+        # Get base chunks for other methods
         chunks = self.chunk_text(text, method, **kwargs)
         
         # Add page information to chunks
@@ -533,3 +543,56 @@ class ChunkingService:
         if not sentences:
             return 0
         return sum(len(s) for s in sentences) / len(sentences)
+    
+    def _method_9_clause_aware(self, text: str, **kwargs) -> List[Dict[str, Any]]:
+        """
+        Clause-aware chunking using hierarchy-aware clause detection
+        
+        This method uses the ClauseChunker for standards/PDF documents.
+        Note: This method requires doc_id, source_name, and pages to be passed in kwargs
+        for full functionality. If not provided, falls back to basic chunking.
+        """
+        try:
+            from app.rag.ingest.clause_chunker import ClauseChunker
+            from app.core.config import settings
+            
+            # Extract optional parameters
+            doc_id = kwargs.get('doc_id', 0)
+            source_name = kwargs.get('source_name', 'unknown')
+            pages = kwargs.get('pages', None)
+            target_tokens = kwargs.get('target_tokens', settings.rag_chunk_target_tokens)
+            overlap_tokens = kwargs.get('overlap_tokens', settings.rag_chunk_overlap_tokens)
+            
+            # Initialize clause chunker
+            chunker = ClauseChunker(
+                target_tokens=target_tokens,
+                overlap_tokens=overlap_tokens,
+                model_name=settings.embedding_model
+            )
+            
+            # Chunk document
+            chunks = chunker.chunk_document(text, doc_id, source_name, pages)
+            
+            # Convert Chunk objects to dict format for compatibility
+            result = []
+            for i, chunk in enumerate(chunks):
+                chunk_dict = chunk.to_dict()
+                chunk_dict['method'] = 9
+                chunk_dict['chunk_index'] = i
+                # Ensure hash is present
+                if 'hash' not in chunk_dict or not chunk_dict['hash']:
+                    chunk_dict['hash'] = chunk.hash
+                result.append(chunk_dict)
+            
+            return result
+            
+        except ImportError as e:
+            logger.error(f"Failed to import ClauseChunker: {e}")
+            # Fallback to paragraph-based chunking
+            logger.warning("Falling back to paragraph-based chunking")
+            return self._method_3_paragraph_boundary(text, **kwargs)
+        except Exception as e:
+            logger.error(f"Clause-aware chunking failed: {e}")
+            # Fallback to paragraph-based chunking
+            logger.warning("Falling back to paragraph-based chunking")
+            return self._method_3_paragraph_boundary(text, **kwargs)

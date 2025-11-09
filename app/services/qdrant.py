@@ -29,6 +29,13 @@ class QdrantService:
                 self.client = QdrantClient(url=settings.qdrant_url)
             
             self._ensure_collection_exists()
+            # Ensure indexes exist even for existing collections
+            try:
+                self.create_missing_indexes()
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Failed to create missing indexes on startup: {e}")
             self._is_available = True
         except Exception as e:
             # Log the error but don't fail initialization
@@ -75,7 +82,14 @@ class QdrantService:
             # Create indexes only for fields actually used in filtering
             payload_fields = [
                 ("doc_id", PayloadSchemaType.INTEGER),
-                ("hash", PayloadSchemaType.KEYWORD)
+                ("hash", PayloadSchemaType.KEYWORD),
+                ("section_id", PayloadSchemaType.KEYWORD),
+                ("section_id_alias", PayloadSchemaType.KEYWORD),
+                ("source_name", PayloadSchemaType.KEYWORD),
+                ("level", PayloadSchemaType.INTEGER),
+                ("list_items", PayloadSchemaType.BOOL),
+                ("is_table", PayloadSchemaType.BOOL),
+                ("has_supporting_docs", PayloadSchemaType.BOOL)
             ]
             
             for field_name, field_type in payload_fields:
@@ -104,7 +118,14 @@ class QdrantService:
             # Create indexes only for fields actually used in filtering
             payload_fields = [
                 ("doc_id", PayloadSchemaType.INTEGER),
-                ("hash", PayloadSchemaType.KEYWORD)
+                ("hash", PayloadSchemaType.KEYWORD),
+                ("section_id", PayloadSchemaType.KEYWORD),
+                ("section_id_alias", PayloadSchemaType.KEYWORD),
+                ("source_name", PayloadSchemaType.KEYWORD),
+                ("level", PayloadSchemaType.INTEGER),
+                ("list_items", PayloadSchemaType.BOOL),
+                ("is_table", PayloadSchemaType.BOOL),
+                ("has_supporting_docs", PayloadSchemaType.BOOL)
             ]
             
             created_count = 0
