@@ -50,10 +50,150 @@ class LexicalSearchService:
         finally:
             db.close()
     
+    def _get_synonym_variants(self, query: str) -> List[str]:
+        """
+        Get list of query variants including synonyms
+        
+        Args:
+            query: Original search query
+            
+        Returns:
+            List of query variants (original + synonyms)
+        """
+        import re
+        
+        # Synonym mapping: base term -> list of synonyms
+        synonym_map = {
+            'evidence': ['supporting documents', 'supporting evidence', 'evidences'],
+            'evidences': ['evidence', 'supporting documents', 'supporting evidence'],
+            'supporting documents': ['evidence', 'evidences', 'supporting evidence'],
+            'supporting evidence': ['evidence', 'evidences', 'supporting documents'],
+        }
+        
+        query_lower = query.lower()
+        variants = [query]  # Always include original query
+        
+        # Check if any synonym term appears in the query (using word boundaries)
+        for term, synonyms in synonym_map.items():
+            # Use word boundary matching to find the term as a whole word
+            pattern = r'\b' + re.escape(term) + r'\b'
+            if re.search(pattern, query_lower, re.IGNORECASE):
+                # Replace the term with each synonym to create variants
+                for synonym in synonyms:
+                    # Create variant by replacing term with synonym
+                    variant = re.sub(
+                        pattern,
+                        synonym,
+                        query_lower,
+                        flags=re.IGNORECASE
+                    )
+                    if variant.lower() != query_lower:
+                        variants.append(variant)
+                logger.info(f"Found synonym term '{term}' in query, adding variants: {synonyms}")
+                break  # Only process first match to avoid too many variants
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_variants = []
+        for variant in variants:
+            variant_lower = variant.lower()
+            if variant_lower not in seen:
+                seen.add(variant_lower)
+                unique_variants.append(variant)
+        
+        logger.info(f"Query '{query}' expanded to {len(unique_variants)} variants: {unique_variants}")
+        return unique_variants
+    
+    def _expand_query_synonyms(self, query: str) -> str:
+        """
+        Expand query with synonyms for better lexical matching
+        
+        Args:
+            query: Original search query
+            
+        Returns:
+            Expanded query string with synonyms using OR logic for PostgreSQL FTS
+            Formatted for to_tsquery: multi-word terms use & (AND), terms joined with | (OR)
+        """
+        import re
+        
+        # Synonym mapping: base term -> list of synonyms
+        # Include plural forms in the mapping
+        synonym_map = {
+            'evidence': ['supporting documents', 'supporting evidence', 'evidences'],
+            'evidences': ['evidence', 'supporting documents', 'supporting evidence'],
+            'supporting documents': ['evidence', 'evidences', 'supporting evidence'],
+            'supporting evidence': ['evidence', 'evidences', 'supporting documents'],
+        }
+        
+        query_lower = query.lower()
+        expanded_terms = [query]  # Always include original query
+        
+        # Check if any synonym term appears in the query (using word boundaries)
+        for term, synonyms in synonym_map.items():
+            if term in query_lower:
+                expanded_terms.extend(synonyms)
+        
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_terms = []
+        for term in expanded_terms:
+            term_lower = term.lower()
+            if term_lower not in seen:
+                seen.add(term_lower)
+                unique_terms.append(term)
+        
+        # If no synonyms were added, return original query
+        if len(unique_terms) == 1:
+            return query
+        
+        # Format terms for to_tsquery:
+        # - Single words: use as-is
+        # - Multi-word terms: join words with & (AND)
+        # - Join all terms with | (OR)
+        formatted_terms = []
+        for term in unique_terms:
+            words = term.split()
+            if len(words) > 1:
+                # Multi-word term: join with & (AND)
+                formatted_term = ' & '.join(words)
+                formatted_terms.append(f"({formatted_term})")
+            else:
+                # Single word: use as-is
+                formatted_terms.append(term)
+        
+        # Join all terms with | (OR) for PostgreSQL FTS
+        return ' | '.join(formatted_terms)
+    
     def _postgresql_search(self, query: str, search_limit: int, db) -> List[Dict[str, Any]]:
         """PostgreSQL full-text search"""
         try:
-            fts_query = """
+            # Get synonym variants for the query
+            synonym_variants = self._get_synonym_variants(query)
+            
+            # Build WHERE clause with OR conditions for each variant
+            # Use plainto_tsquery for each variant (more forgiving than to_tsquery)
+            where_conditions = []
+            query_params = {"limit": search_limit}
+            
+            for i, variant in enumerate(synonym_variants):
+                param_name = f"query_{i}"
+                query_params[param_name] = variant
+                where_conditions.append(
+                    f"to_tsvector('english', c.text) @@ plainto_tsquery('english', :{param_name})"
+                )
+            
+            # Combine with OR
+            where_clause = " OR ".join(where_conditions)
+            
+            # Build query with MAX rank across all variants for better scoring
+            # Use GREATEST to get the highest rank score from any matching variant
+            rank_expressions = [
+                f"COALESCE(ts_rank(to_tsvector('english', c.text), plainto_tsquery('english', :query_{i})), 0)"
+                for i in range(len(synonym_variants))
+            ]
+            
+            fts_query = f"""
             SELECT 
                 c.id as chunk_id,
                 c.doc_id,
@@ -63,15 +203,15 @@ class LexicalSearchService:
                 c.hash,
                 d.title as source,
                 c.text,
-                ts_rank(to_tsvector('english', c.text), plainto_tsquery('english', :query)) as rank_score
+                GREATEST({', '.join(rank_expressions)}) as rank_score
             FROM chunks c
             JOIN documents d ON c.doc_id = d.id
-            WHERE to_tsvector('english', c.text) @@ plainto_tsquery('english', :query)
+            WHERE {where_clause}
             ORDER BY rank_score DESC, c.id DESC
             LIMIT :limit
             """
             
-            result = db.execute(text(fts_query), {"query": query, "limit": search_limit})
+            result = db.execute(text(fts_query), query_params)
             
             formatted_results = []
             for row in result:

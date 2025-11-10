@@ -61,7 +61,7 @@ class ChatOrchestrator:
             logger.error(f"Error retrieving candidates: {str(e)}")
             raise RuntimeError(f"Failed to retrieve candidates: {str(e)}")
     
-    def rerank(self, query: str, candidates: List[Dict[str, Any]], top_k: int = 8) -> List[Dict[str, Any]]:
+    def rerank(self, query: str, candidates: List[Dict[str, Any]], top_k: int = 10) -> List[Dict[str, Any]]:
         """
         Rerank candidates using cross-encoder
         

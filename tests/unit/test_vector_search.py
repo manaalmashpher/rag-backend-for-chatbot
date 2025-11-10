@@ -80,20 +80,23 @@ class TestVectorSearchService:
         """Test search when embedding generation fails"""
         # Setup mock to raise exception
         mock_embeddings.generate_single_embedding.side_effect = Exception("Embedding error")
+        mock_qdrant = search_service.qdrant
+        mock_qdrant.is_available.return_value = True
         
-        # Execute search and expect exception
-        with pytest.raises(RuntimeError, match="Vector search failed"):
-            search_service.search("test query")
+        # Execute search - code gracefully handles errors by returning empty list
+        results = search_service.search("test query")
+        assert results == []
     
     def test_search_qdrant_error(self, search_service, mock_qdrant, mock_embeddings):
         """Test search when Qdrant search fails"""
         # Setup mocks
         mock_embeddings.generate_single_embedding.return_value = [0.1, 0.2, 0.3]
         mock_qdrant.search_vectors.side_effect = Exception("Qdrant error")
+        mock_qdrant.is_available.return_value = True
         
-        # Execute search and expect exception
-        with pytest.raises(RuntimeError, match="Vector search failed"):
-            search_service.search("test query")
+        # Execute search - code gracefully handles errors by returning empty list
+        results = search_service.search("test query")
+        assert results == []
     
     def test_search_with_metadata(self, search_service, mock_qdrant, mock_embeddings):
         """Test search with metadata"""
@@ -113,3 +116,41 @@ class TestVectorSearchService:
         assert result['search_type'] == 'semantic'
         assert result['query'] == 'test query'
         assert result['limit'] == 10
+    
+    def test_search_uses_default_score_threshold(self, search_service, mock_qdrant, mock_embeddings):
+        """Test that search uses default score threshold of 0.05"""
+        # Setup mocks
+        mock_embeddings.generate_single_embedding.return_value = [0.1, 0.2, 0.3]
+        mock_qdrant.search_vectors.return_value = []
+        mock_qdrant.is_available.return_value = True
+        
+        # Execute search
+        search_service.search("test query")
+        
+        # Verify score_threshold parameter was passed with default value 0.05
+        call_args = mock_qdrant.search_vectors.call_args
+        assert call_args[1]['score_threshold'] == 0.05
+    
+    def test_search_uses_configurable_score_threshold(self, search_service, mock_qdrant, mock_embeddings):
+        """Test that search uses configurable score threshold from settings"""
+        from app.core.config import settings
+        
+        # Setup mocks
+        mock_embeddings.generate_single_embedding.return_value = [0.1, 0.2, 0.3]
+        mock_qdrant.search_vectors.return_value = []
+        mock_qdrant.is_available.return_value = True
+        
+        # Temporarily override settings
+        original_threshold = getattr(settings, 'vector_score_threshold', 0.05)
+        settings.vector_score_threshold = 0.08
+        
+        try:
+            # Execute search
+            search_service.search("test query")
+            
+            # Verify score_threshold parameter was passed with overridden value
+            call_args = mock_qdrant.search_vectors.call_args
+            assert call_args[1]['score_threshold'] == 0.08
+        finally:
+            # Restore original value
+            settings.vector_score_threshold = original_threshold

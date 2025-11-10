@@ -59,10 +59,12 @@ class VectorSearchService:
             
             # Search vectors in Qdrant with timeout
             try:
+                # Use configurable score threshold (default 0.05)
+                score_threshold = getattr(settings, 'vector_score_threshold', 0.05)
                 results = self.qdrant.search_vectors(
                     query_vector=query_vector,
                     limit=min(search_limit, 15),  # Cap at 15 for performance
-                    score_threshold=0.1  # Higher threshold to filter low-quality results
+                    score_threshold=score_threshold
                 )
                 
                 search_time = time.time() - start_time

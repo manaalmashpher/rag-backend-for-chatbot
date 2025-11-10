@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     topk_lex: int = 10  # Lexical search top-K (reduced for performance)
     fuse_sem_weight: float = 0.6  # Semantic search weight
     fuse_lex_weight: float = 0.4  # Lexical search weight
+    vector_score_threshold: float = 0.05  # Minimum cosine similarity score for vector search results
     
     # Reranking Configuration
     rerank_top_k: int = 50  # Number of candidates to rerank

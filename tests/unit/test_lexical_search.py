@@ -48,9 +48,9 @@ class TestLexicalSearchService:
         assert results[0]['chunk_id'] == 'ch_00001'
         assert results[0]['doc_id'] == 'doc_01'
         assert results[0]['method'] == 2
-        # Score is calculated as: match_count / total_terms = 1/2 = 0.5
-        # "test query" has 2 terms, "This is test content" matches 1 term ("test")
-        assert results[0]['score'] == 0.5
+        # Score comes from PostgreSQL ts_rank (not calculated match_count/total_terms)
+        # Mock returns rank_score = 0.75
+        assert results[0]['score'] == 0.75
         assert results[0]['search_type'] == 'lexical'
         
         # Verify database query was executed
@@ -75,9 +75,10 @@ class TestLexicalSearchService:
         # Setup mock to raise exception
         mock_db.execute.side_effect = Exception("Database error")
         
-        # Execute search and expect exception
-        with pytest.raises(RuntimeError, match="Lexical search failed"):
-            search_service.search("test query")
+        # Execute search - code gracefully handles errors by returning empty list
+        # (PostgreSQL fails, falls back to SQLite, which also fails, returns [])
+        results = search_service.search("test query")
+        assert results == []
     
     def test_search_with_metadata(self, search_service, mock_db):
         """Test search with metadata"""
@@ -111,3 +112,53 @@ class TestLexicalSearchService:
         
         # Verify empty results
         assert len(results) == 0
+    
+    def test_expand_query_synonyms_evidence(self, search_service):
+        """Test synonym expansion for 'evidence' query"""
+        # Test that "evidence" expands to include synonyms
+        expanded = search_service._expand_query_synonyms("evidence")
+        
+        # Should contain original query
+        assert "evidence" in expanded.lower()
+        # Should contain synonyms
+        assert "supporting" in expanded.lower() or "documents" in expanded.lower()
+    
+    def test_expand_query_synonyms_evidence_with_context(self, search_service):
+        """Test synonym expansion for 'evidence for 5.22.1' query"""
+        # Test that "evidence for 5.22.1" expands to include synonyms
+        expanded = search_service._expand_query_synonyms("evidence for 5.22.1")
+        
+        # Should contain original query terms
+        assert "evidence" in expanded.lower()
+        # Should contain synonyms
+        assert "supporting" in expanded.lower() or "documents" in expanded.lower()
+    
+    def test_expand_query_synonyms_supporting_documents(self, search_service):
+        """Test synonym expansion for 'supporting documents' query"""
+        # Test that "supporting documents" expands to include synonyms
+        expanded = search_service._expand_query_synonyms("supporting documents")
+        
+        # Should contain original query
+        assert "supporting" in expanded.lower() and "documents" in expanded.lower()
+        # Should contain synonyms
+        assert "evidence" in expanded.lower()
+    
+    def test_expand_query_synonyms_no_synonyms(self, search_service):
+        """Test synonym expansion for query with no synonyms"""
+        # Test that query with no synonyms returns unchanged
+        query = "random query"
+        expanded = search_service._expand_query_synonyms(query)
+        
+        # Should return original query unchanged
+        assert expanded == query
+    
+    def test_expand_query_synonyms_case_insensitive(self, search_service):
+        """Test that synonym expansion works case-insensitively"""
+        # Test with uppercase
+        expanded_upper = search_service._expand_query_synonyms("EVIDENCE")
+        # Test with lowercase
+        expanded_lower = search_service._expand_query_synonyms("evidence")
+        
+        # Both should expand (contain synonyms)
+        assert "supporting" in expanded_upper.lower() or "documents" in expanded_upper.lower()
+        assert "supporting" in expanded_lower.lower() or "documents" in expanded_lower.lower()

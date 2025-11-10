@@ -48,7 +48,7 @@ async def chat_endpoint(
         logger.info(f"Retrieved {len(candidates)} candidates")
         
         # Step 2: Rerank candidates
-        reranked = chat_orchestrator.rerank(chat_request.message, candidates, top_k=8)
+        reranked = chat_orchestrator.rerank(chat_request.message, candidates, top_k=10)
         
         # Step 3: Synthesize answer
         answer = chat_orchestrator.synthesize_answer(chat_request.message, reranked)
