@@ -159,7 +159,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId }) => {
                   <div
                     className={`rounded-2xl px-4 py-3 shadow-sm ${
                       message.role === "user"
-                        ? "bg-blue-600 text-white rounded-tr-md"
+                        ? "bg-blue-500 text-white rounded-tr-md"
                         : "bg-gray-50 text-gray-900 border border-gray-200 rounded-tl-md mr-auto"
                     }`}
                   >

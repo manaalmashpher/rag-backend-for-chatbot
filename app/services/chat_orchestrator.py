@@ -151,7 +151,8 @@ class ChatOrchestrator:
         """
         return (
             "You are a document QA assistant. You must answer strictly using the provided CONTEXT. "
-            "Do not use any external knowledge. If the answer cannot be found in the provided context, "
+            "Do not use any irrelevant external knowledge. If relevant matches are not found in the context, infer based on related sections or similar terms. "
+            "If the answer cannot be found in the provided context, "
             "respond with \"I couldn't find relevant information in the provided documents.\""
         )
     
@@ -201,7 +202,7 @@ class ChatOrchestrator:
             ]
             
             # Call DeepSeek client
-            answer = deepseek_chat(messages, temperature=0.1, max_tokens=700)
+            answer = deepseek_chat(messages, temperature=0.65, max_tokens=700)
             
             logger.info("Answer synthesis completed successfully")
             return answer

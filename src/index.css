@@ -243,6 +243,10 @@ body {
   background-color: #f9fafb;
 }
 
+.bg-blue-500 {
+  background-color: #3b82f6;
+}
+
 .bg-blue-600 {
   background-color: #2563eb;
 }

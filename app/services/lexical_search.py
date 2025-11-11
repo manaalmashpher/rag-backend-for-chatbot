@@ -68,6 +68,10 @@ class LexicalSearchService:
             'evidences': ['evidence', 'supporting documents', 'supporting evidence'],
             'supporting documents': ['evidence', 'evidences', 'supporting evidence'],
             'supporting evidence': ['evidence', 'evidences', 'supporting documents'],
+            'purpose': ['objective', 'goal', 'aim'],
+            'objective': ['purpose', 'goal', 'aim'],
+            'goal': ['purpose', 'objective', 'aim'],
+            'aim': ['purpose', 'objective', 'goal'],
         }
         
         query_lower = query.lower()
