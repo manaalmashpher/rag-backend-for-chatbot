@@ -98,14 +98,14 @@ export interface Citation {
 }
 
 export interface ChatRequest {
-  conversation_id: string; // UUID string for conversation tracking
+  conversation_id?: string; // Optional UUID string for conversation tracking
   message: string; // User message (1-1000 characters)
 }
 
 export interface ChatResponse {
   answer: string;
   citations: Citation[];
-  conversation_id: string; // Echoed conversation ID
+  session_id: string; // Session ID (created or existing)
   latency_ms: number;
 }
 
@@ -165,14 +165,14 @@ export const apiService = {
 
   // Send chat message
   async sendChatMessage(
-    conversationId: string,
+    conversationId: string | null | undefined,
     message: string
   ): Promise<ChatResponse> {
     try {
       const response: AxiosResponse<ChatResponse> = await apiClient.post(
         "/api/chat",
         {
-          conversation_id: conversationId,
+          conversation_id: conversationId || null,
           message: message,
         }
       );

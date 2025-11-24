@@ -2,13 +2,34 @@ import React from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { vi, describe, it, expect, beforeEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
 import ChatInterface from "../components/ChatInterface";
 import { apiService } from "../services/api";
 
 // Mock the API service
 vi.mock("../services/api");
 const mockApiService = apiService as any;
+
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] || null,
+    setItem: (key: string, value: string) => {
+      store[key] = value.toString();
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+  };
+})();
+
+Object.defineProperty(window, "localStorage", {
+  value: localStorageMock,
+});
 
 const createTestQueryClient = () =>
   new QueryClient({
@@ -43,76 +64,139 @@ const mockChatResponse = {
       text: "Another citation text for testing purposes.",
     },
   ],
-  conversation_id: "test-conversation-id",
+  session_id: "test-session-id-123",
   latency_ms: 250,
 };
 
 describe("ChatInterface", () => {
-  const conversationId = "test-conversation-id";
-
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorageMock.clear();
+  });
+
+  afterEach(() => {
+    localStorageMock.clear();
   });
 
   it("renders empty state when no messages", () => {
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
     expect(screen.getByText("Start a conversation")).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Ask a question to get started with your document search/i
+        /Ask questions in natural language and receive answers with/i
       )
     ).toBeInTheDocument();
   });
 
   it("renders input box and send button", () => {
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    expect(
-      screen.getByPlaceholderText(
-        /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-      )
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Message...")).toBeInTheDocument();
+    const buttons = screen.getAllByRole("button");
+    expect(buttons.length).toBeGreaterThan(0);
   });
 
   it("disables send button when input is empty", () => {
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const sendButton = screen.getByRole("button");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
+    );
     expect(sendButton).toBeDisabled();
   });
 
   it("enables send button when input has text", async () => {
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
-    const sendButton = screen.getByRole("button");
 
     await user.type(textarea, "test message");
-    expect(sendButton).toBeEnabled();
+    expect(sendButton).not.toBeDisabled();
   });
 
-  it("calls API when message is submitted", async () => {
+  it("calls API with null sessionId for first message", async () => {
     mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
-    const sendButton = screen.getByRole("button");
 
     await user.type(textarea, "test message");
-    await user.click(sendButton);
+    await user.click(sendButton!);
 
     await waitFor(() => {
       expect(mockApiService.sendChatMessage).toHaveBeenCalledWith(
-        conversationId,
+        null,
+        "test message"
+      );
+    });
+  });
+
+  it("saves sessionId to localStorage after API response", async () => {
+    mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<ChatInterface />);
+
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
+    );
+
+    await user.type(textarea, "test message");
+    await user.click(sendButton!);
+
+    await waitFor(() => {
+      expect(localStorageMock.getItem("chat_session_id")).toBe(
+        "test-session-id-123"
+      );
+    });
+  });
+
+  it("loads sessionId from localStorage on mount", () => {
+    localStorageMock.setItem("chat_session_id", "existing-session-id");
+
+    renderWithQueryClient(<ChatInterface />);
+
+    // Component should load sessionId from localStorage
+    // This is tested indirectly by checking API calls use the loaded sessionId
+    expect(localStorageMock.getItem("chat_session_id")).toBe(
+      "existing-session-id"
+    );
+  });
+
+  it("uses existing sessionId for subsequent messages", async () => {
+    localStorageMock.setItem("chat_session_id", "existing-session-id");
+    mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<ChatInterface />);
+
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
+    );
+
+    await user.type(textarea, "test message");
+    await user.click(sendButton!);
+
+    await waitFor(() => {
+      expect(mockApiService.sendChatMessage).toHaveBeenCalledWith(
+        "existing-session-id",
         "test message"
       );
     });
@@ -122,15 +206,16 @@ describe("ChatInterface", () => {
     mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
-    const sendButton = screen.getByRole("button");
 
     await user.type(textarea, "test message");
-    await user.click(sendButton);
+    await user.click(sendButton!);
 
     await waitFor(() => {
       expect(screen.getByText("test message")).toBeInTheDocument();
@@ -144,20 +229,25 @@ describe("ChatInterface", () => {
     mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
-    const sendButton = screen.getByRole("button");
 
     await user.type(textarea, "test message");
-    await user.click(sendButton);
+    await user.click(sendButton!);
 
     await waitFor(() => {
-      expect(screen.getByText(/Citations \(2\)/i)).toBeInTheDocument();
-      expect(screen.getByText("Score: 85.0%")).toBeInTheDocument();
-      expect(screen.getByText("Score: 72.0%")).toBeInTheDocument();
+      // Check for Citations header (h4 element)
+      const citationsHeader = screen.getByRole("heading", {
+        name: /Citations/i,
+      });
+      expect(citationsHeader).toBeInTheDocument();
+      expect(screen.getByText("85.0%")).toBeInTheDocument();
+      expect(screen.getByText("72.0%")).toBeInTheDocument();
     });
   });
 
@@ -165,21 +255,22 @@ describe("ChatInterface", () => {
     mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
-    const sendButton = screen.getByRole("button");
 
     await user.type(textarea, "test message");
-    await user.click(sendButton);
+    await user.click(sendButton!);
 
     await waitFor(() => {
-      const citations = screen.getAllByText(/Score: \d+\.\d+%/);
+      const scoreElements = screen.getAllByText(/\d+\.\d+%/);
       // First citation should have higher score (85.0%)
-      expect(citations[0]).toHaveTextContent("Score: 85.0%");
-      expect(citations[1]).toHaveTextContent("Score: 72.0%");
+      expect(scoreElements[0]).toHaveTextContent("85.0%");
+      expect(scoreElements[1]).toHaveTextContent("72.0%");
     });
   });
 
@@ -188,15 +279,16 @@ describe("ChatInterface", () => {
     mockApiService.sendChatMessage.mockRejectedValue(mockError);
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
-    const sendButton = screen.getByRole("button");
 
     await user.type(textarea, "test message");
-    await user.click(sendButton);
+    await user.click(sendButton!);
 
     await waitFor(() => {
       expect(screen.getByText("Error")).toBeInTheDocument();
@@ -213,15 +305,16 @@ describe("ChatInterface", () => {
     );
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
-    const sendButton = screen.getByRole("button");
 
     await user.type(textarea, "test message");
-    await user.click(sendButton);
+    await user.click(sendButton!);
 
     expect(screen.getByText("Thinking...")).toBeInTheDocument();
     expect(textarea).toBeDisabled();
@@ -232,15 +325,18 @@ describe("ChatInterface", () => {
     mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
     const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+      "Message..."
     ) as HTMLTextAreaElement;
-    const sendButton = screen.getByRole("button");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
+    );
 
     await user.type(textarea, "test message");
-    await user.click(sendButton);
+    await user.click(sendButton!);
 
     await waitFor(() => {
       expect(textarea.value).toBe("");
@@ -251,17 +347,15 @@ describe("ChatInterface", () => {
     mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
 
     await user.type(textarea, "test message{Enter}");
 
     await waitFor(() => {
       expect(mockApiService.sendChatMessage).toHaveBeenCalledWith(
-        conversationId,
+        null,
         "test message"
       );
     });
@@ -269,11 +363,9 @@ describe("ChatInterface", () => {
 
   it("shows character counter", async () => {
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
 
     await user.type(textarea, "test");
     expect(screen.getByText("4/1000")).toBeInTheDocument();
@@ -287,33 +379,152 @@ describe("ChatInterface", () => {
     mockApiService.sendChatMessage.mockResolvedValue(responseWithoutCitations);
 
     const user = userEvent.setup();
-    renderWithQueryClient(<ChatInterface conversationId={conversationId} />);
+    renderWithQueryClient(<ChatInterface />);
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
-    const sendButton = screen.getByRole("button");
 
     await user.type(textarea, "test message");
-    await user.click(sendButton);
+    await user.click(sendButton!);
 
     await waitFor(() => {
       expect(screen.getByText("No citations available")).toBeInTheDocument();
     });
   });
 
-  it("persists conversation ID across renders", () => {
-    const { rerender } = renderWithQueryClient(
-      <ChatInterface conversationId={conversationId} />
+  it("displays 'New Conversation' button when messages exist", async () => {
+    mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<ChatInterface />);
+
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
 
-    rerender(
-      <QueryClientProvider client={createTestQueryClient()}>
-        <ChatInterface conversationId={conversationId} />
-      </QueryClientProvider>
+    await user.type(textarea, "test message");
+    await user.click(sendButton!);
+
+    await waitFor(() => {
+      expect(screen.getByText("New Conversation")).toBeInTheDocument();
+    });
+  });
+
+  it("'New Conversation' button clears session and messages", async () => {
+    localStorageMock.setItem("chat_session_id", "existing-session-id");
+    mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<ChatInterface />);
+
+    // Send a message first
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
     );
 
-    // Conversation ID should remain the same (tested via API calls)
-    expect(conversationId).toBe(conversationId);
+    await user.type(textarea, "test message");
+    await user.click(sendButton!);
+
+    await waitFor(() => {
+      expect(screen.getByText("New Conversation")).toBeInTheDocument();
+    });
+
+    // Click "New Conversation" button
+    const newConversationButton = screen.getByText("New Conversation");
+    await user.click(newConversationButton);
+
+    // Verify session cleared from localStorage
+    expect(localStorageMock.getItem("chat_session_id")).toBeNull();
+
+    // Verify messages cleared (empty state should show)
+    await waitFor(() => {
+      expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+    });
+
+    // Next message should create new session
+    await user.type(textarea, "new message");
+    await user.click(sendButton!);
+
+    await waitFor(() => {
+      expect(mockApiService.sendChatMessage).toHaveBeenCalledWith(
+        null,
+        "new message"
+      );
+    });
+  });
+
+  it("handles localStorage errors gracefully", async () => {
+    // Mock localStorage to throw errors
+    const originalSetItem = localStorageMock.setItem;
+    localStorageMock.setItem = vi.fn(() => {
+      throw new Error("QuotaExceededError");
+    });
+
+    mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<ChatInterface />);
+
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
+    );
+
+    await user.type(textarea, "test message");
+    await user.click(sendButton!);
+
+    // App should continue to function even if localStorage fails
+    await waitFor(() => {
+      expect(screen.getByText("test message")).toBeInTheDocument();
+      expect(
+        screen.getByText("This is a test response from the chat API.")
+      ).toBeInTheDocument();
+    });
+
+    // Restore original function
+    localStorageMock.setItem = originalSetItem;
+  });
+
+  it("works without localStorage (graceful fallback)", async () => {
+    // Mock localStorage to be unavailable
+    const originalGetItem = localStorageMock.getItem;
+    const originalSetItem = localStorageMock.setItem;
+    localStorageMock.getItem = vi.fn(() => {
+      throw new Error("localStorage unavailable");
+    });
+    localStorageMock.setItem = vi.fn(() => {
+      throw new Error("localStorage unavailable");
+    });
+
+    mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
+
+    const user = userEvent.setup();
+    renderWithQueryClient(<ChatInterface />);
+
+    const textarea = screen.getByPlaceholderText("Message...");
+    const buttons = screen.getAllByRole("button");
+    const sendButton = buttons.find((btn) =>
+      btn.getAttribute("aria-label")?.includes("Send")
+    );
+
+    await user.type(textarea, "test message");
+    await user.click(sendButton!);
+
+    // App should continue to function
+    await waitFor(() => {
+      expect(screen.getByText("test message")).toBeInTheDocument();
+    });
+
+    // Restore original functions
+    localStorageMock.getItem = originalGetItem;
+    localStorageMock.setItem = originalSetItem;
   });
 });

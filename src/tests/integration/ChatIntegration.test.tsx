@@ -81,7 +81,7 @@ const mockChatResponse = {
       text: "This is a test citation text.",
     },
   ],
-  conversation_id: "test-conversation-id",
+  session_id: "test-session-id",
   latency_ms: 250,
 };
 
@@ -163,9 +163,7 @@ describe("Chat Integration Tests", () => {
     const user = userEvent.setup();
     renderApp("/chat");
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
     const form = textarea.closest("form");
     const sendButton = form?.querySelector(
       "button[type='submit']"
@@ -179,16 +177,14 @@ describe("Chat Integration Tests", () => {
     });
   });
 
-  // INT-013: API request includes conversation_id
-  it("API request includes conversation_id in request payload", async () => {
+  // INT-013: API request includes optional conversation_id (can be null for new sessions)
+  it("API request includes optional conversation_id in request payload", async () => {
     mockApiService.sendChatMessage.mockResolvedValue(mockChatResponse);
 
     const user = userEvent.setup();
     renderApp("/chat");
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
     const form = textarea.closest("form");
     const sendButton = form?.querySelector(
       "button[type='submit']"
@@ -201,8 +197,8 @@ describe("Chat Integration Tests", () => {
       expect(mockApiService.sendChatMessage).toHaveBeenCalled();
       const callArgs = mockApiService.sendChatMessage.mock.calls[0];
       expect(callArgs).toHaveLength(2);
-      expect(callArgs[0]).toBeTruthy(); // conversation_id should be a string
-      expect(typeof callArgs[0]).toBe("string");
+      // First message should have null sessionId (creates new session)
+      expect(callArgs[0]).toBeNull();
       expect(callArgs[1]).toBe("test message");
     });
   });
@@ -214,9 +210,7 @@ describe("Chat Integration Tests", () => {
     const user = userEvent.setup();
     renderApp("/chat");
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
     const form = textarea.closest("form");
     const sendButton = form?.querySelector(
       "button[type='submit']"
@@ -228,7 +222,7 @@ describe("Chat Integration Tests", () => {
 
     await waitFor(() => {
       expect(mockApiService.sendChatMessage).toHaveBeenCalledWith(
-        expect.any(String),
+        expect.anything(), // Can be null or string
         testMessage
       );
     });
@@ -241,9 +235,7 @@ describe("Chat Integration Tests", () => {
     const user = userEvent.setup();
     renderApp("/chat");
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
     const form = textarea.closest("form");
     const sendButton = form?.querySelector(
       "button[type='submit']"
@@ -298,9 +290,7 @@ describe("Chat Integration Tests", () => {
     const user = userEvent.setup();
     renderApp("/chat");
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
     const form = textarea.closest("form");
     const sendButton = form?.querySelector(
       "button[type='submit']"
@@ -339,9 +329,7 @@ describe("Chat Integration Tests", () => {
     const user = userEvent.setup();
     renderApp("/chat");
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
     const form = textarea.closest("form");
     const sendButton = form?.querySelector(
       "button[type='submit']"
@@ -379,9 +367,7 @@ describe("Chat Integration Tests", () => {
     const user = userEvent.setup();
     renderApp("/chat");
 
-    const textarea = screen.getByPlaceholderText(
-      /Type your message... \(Press Enter to send, Shift\+Enter for new line\)/i
-    );
+    const textarea = screen.getByPlaceholderText("Message...");
     const form = textarea.closest("form");
     const sendButton = form?.querySelector(
       "button[type='submit']"

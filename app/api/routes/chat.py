@@ -39,19 +39,31 @@ async def chat_endpoint(
     request_id = request.headers.get("X-Correlation-ID", str(uuid_lib.uuid4()))
     
     try:
-        logger.info(f"Chat request received: conversation_id={chat_request.conversation_id}, message_length={len(chat_request.message)}")
+        session_id_input = chat_request.conversation_id
+        logger.info(f"Chat request received: conversation_id={session_id_input}, message_length={len(chat_request.message)}")
         
-
         # Integrate with chat orchestrator service
-        # Step 1: Retrieve candidates
-        candidates = chat_orchestrator.retrieve_candidates(chat_request.message, top_k=20)
+        # Step 1: Load history and build retrieval query (for follow-up aware retrieval)
+        retrieval_query = chat_request.message
+        if session_id_input:
+            try:
+                history = chat_orchestrator.load_history(session_id_input, limit=10)
+                retrieval_query = chat_orchestrator._build_retrieval_query(history, chat_request.message)
+            except Exception as e:
+                # If history loading fails, fall back to original message
+                logger.warning(f"Failed to load history for follow-up retrieval: {str(e)}, using original query")
+                retrieval_query = chat_request.message
+        
+        # Step 2: Retrieve candidates using augmented query (if applicable)
+        candidates = chat_orchestrator.retrieve_candidates(retrieval_query, top_k=20)
         logger.info(f"Retrieved {len(candidates)} candidates")
         
-        # Step 2: Rerank candidates
+        # Step 3: Rerank candidates (using original message)
         reranked = chat_orchestrator.rerank(chat_request.message, candidates, top_k=10)
         
-        # Step 3: Synthesize answer
-        answer = chat_orchestrator.synthesize_answer(chat_request.message, reranked)
+        # Step 4: Chat with history support (creates session if needed, loads history, synthesizes, saves turn)
+        # Note: chat() uses original message, not augmented query
+        answer, session_id = chat_orchestrator.chat(chat_request.message, reranked, session_id=session_id_input)
         
         # Build citations from reranked chunks
         citations = []
@@ -73,11 +85,11 @@ async def chat_endpoint(
         response = ChatResponse(
             answer=answer,
             citations=citations,
-            conversation_id=chat_request.conversation_id,
+            session_id=session_id,
             latency_ms=latency_ms
         )
         
-        logger.info(f"Chat request completed: conversation_id={chat_request.conversation_id}, latency_ms={latency_ms}, citations_count={len(citations)}")
+        logger.info(f"Chat request completed: session_id={session_id}, latency_ms={latency_ms}, citations_count={len(citations)}")
         return response
         
     except MissingAPIKeyError as e:

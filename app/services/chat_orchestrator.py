@@ -5,10 +5,14 @@ Chat orchestrator service that handles retrieval, reranking, context building, a
 from typing import List, Dict, Any, Optional
 import logging
 import re
+import uuid as uuid_lib
+from sqlalchemy.orm import Session
 from app.services.hybrid_search import HybridSearchService
 from app.services.reranker import RerankerService
 from app.deps.deepseek_client import deepseek_chat
 from app.deps.exceptions import MissingAPIKeyError, InvalidAPIKeyError
+from app.core.database import get_db
+from app.models.chat_history import ChatSession, ChatMessage
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +110,95 @@ class ChatOrchestrator:
             logger.error(f"Error reranking candidates: {str(e)}")
             raise RuntimeError(f"Failed to rerank candidates: {str(e)}")
     
+    def _extract_section_id(self, text: str) -> Optional[str]:
+        """
+        Extract section ID pattern from text (e.g., 5.22.3)
+        
+        Args:
+            text: Text to search for section ID pattern
+            
+        Returns:
+            Section ID string (e.g., "5.22.3") or None if not found
+        """
+        # Use same regex as HybridSearchService: r'\d+(?:\.\d+)+'
+        section_id_pattern = re.search(r'\d+(?:\.\d+)+', text)
+        return section_id_pattern.group(0) if section_id_pattern else None
+    
+    def _is_ambiguous_followup(self, query: str) -> bool:
+        """
+        Detect if query is an ambiguous follow-up that needs section context
+        
+        Args:
+            query: User query string
+            
+        Returns:
+            True if query is short, contains pronouns, and lacks explicit section ID
+        """
+        query_lower = query.lower()
+        
+        # Check length (short queries more likely to be follow-ups)
+        is_short = len(query) < 80  # Character threshold
+        
+        # Check for pronouns/phrases
+        pronouns = ["this", "that", "it", "them", "those"]
+        phrases = ["for this", "for that", "for it", "for these", "for those"]
+        has_pronoun = any(pronoun in query_lower for pronoun in pronouns) or \
+                      any(phrase in query_lower for phrase in phrases)
+        
+        # Check if explicit section ID is present
+        has_section_id = self._extract_section_id(query) is not None
+        
+        # Ambiguous if: short AND has pronoun AND no explicit section ID
+        return is_short and has_pronoun and not has_section_id
+    
+    def _get_last_section_id_from_history(self, history_messages: List[Dict[str, str]]) -> Optional[str]:
+        """
+        Find the most recent section ID from chat history
+        
+        Args:
+            history_messages: List of message dicts from load_history()
+            
+        Returns:
+            Most recent section ID string or None if not found
+        """
+        # Iterate backwards (most recent first)
+        for msg in reversed(history_messages):
+            if msg.get("role") == "user":
+                section_id = self._extract_section_id(msg.get("content", ""))
+                if section_id:
+                    return section_id
+        return None
+    
+    def _build_retrieval_query(self, history_messages: List[Dict[str, str]], current_user_message: str) -> str:
+        """
+        Build effective retrieval query, augmenting ambiguous follow-ups with section context
+        
+        Args:
+            history_messages: List of message dicts from load_history()
+            current_user_message: Current user query string
+            
+        Returns:
+            Query string for retrieval (may be augmented or unchanged)
+        """
+        # If current message has explicit section ID, use as-is
+        if self._extract_section_id(current_user_message):
+            return current_user_message
+        
+        # If not ambiguous follow-up, use as-is
+        if not self._is_ambiguous_followup(current_user_message):
+            return current_user_message
+        
+        # Ambiguous follow-up: try to get section ID from history
+        last_section_id = self._get_last_section_id_from_history(history_messages)
+        if last_section_id:
+            # Augment query with section context
+            augmented = f"For section {last_section_id}, {current_user_message}"
+            logger.info(f"Augmented retrieval query with section {last_section_id}: {augmented}")
+            return augmented
+        
+        # No section ID in history, use as-is
+        return current_user_message
+    
     def _build_context(self, chunks: List[Dict[str, Any]]) -> str:
         """
         Build context string with bracketed indices and metadata
@@ -175,6 +268,52 @@ class ChatOrchestrator:
             "Include citations using the bracketed numbers [1], [2], etc."
         )
     
+    def chat(self, query: str, context_chunks: List[Dict[str, Any]], session_id: Optional[str] = None) -> tuple[str, str]:
+        """
+        Complete chat flow with history support
+        
+        Args:
+            query: User query string
+            context_chunks: List of context chunks from retrieval
+            session_id: Optional session UUID string
+            
+        Returns:
+            Tuple of (answer, session_id)
+        """
+        # Get or create session
+        session_uuid = self._get_or_create_session(session_id)
+        
+        # Load history
+        history = self.load_history(session_uuid, limit=10)
+        
+        # Build messages with history
+        messages = [{"role": "system", "content": self._create_system_prompt()}]
+        
+        # Add history messages
+        messages.extend(history)
+        
+        # Build context from chunks
+        context = self._build_context(context_chunks)
+        
+        # Add new user message with context
+        messages.append({"role": "user", "content": self._create_user_message(query, context)})
+        
+        # Call LLM with full conversation
+        try:
+            answer = deepseek_chat(messages, temperature=0.65, max_tokens=700)
+            logger.info(f"Generated answer for session {session_uuid}")
+        except (MissingAPIKeyError, InvalidAPIKeyError) as e:
+            logger.error(f"DeepSeek authentication error: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Error in chat flow: {str(e)}")
+            raise RuntimeError(f"Failed to generate answer: {str(e)}")
+        
+        # Save turn
+        self.save_turn(session_uuid, query, answer)
+        
+        return answer, session_uuid
+    
     def synthesize_answer(self, query: str, context_chunks: List[Dict[str, Any]]) -> str:
         """
         Synthesize answer using DeepSeek client with context chunks
@@ -226,14 +365,131 @@ class ChatOrchestrator:
             logger.error(f"Error synthesizing answer: {str(e)}")
             raise RuntimeError(f"Failed to synthesize answer: {str(e)}")
     
-    def save_turn(self) -> None:
+    def load_history(self, session_id: str, limit: int = 10) -> List[Dict[str, str]]:
         """
-        Save conversation turn (no-op for MVP)
+        Load conversation history for a session
+        
+        Args:
+            session_id: Session UUID string
+            limit: Maximum number of messages to retrieve (default 10)
+            
+        Returns:
+            List of message dicts with role and content: [{"role": "user", "content": "..."}, ...]
         """
-        pass
+        db = next(get_db())
+        try:
+            # Find session by UUID
+            session = db.query(ChatSession).filter(ChatSession.uuid == session_id).first()
+            
+            if not session:
+                logger.info(f"Session {session_id} not found, returning empty history")
+                return []
+            
+            # Query messages ordered by created_at ascending (oldest first)
+            messages = db.query(ChatMessage).filter(
+                ChatMessage.session_id == session.id
+            ).order_by(ChatMessage.created_at.asc()).limit(limit).all()
+            
+            # Convert to list of dicts
+            history = [
+                {"role": msg.role, "content": msg.content}
+                for msg in messages
+            ]
+            
+            logger.info(f"Loaded {len(history)} messages from history for session {session_id}")
+            return history
+            
+        except Exception as e:
+            logger.error(f"Error loading history for session {session_id}: {str(e)}")
+            raise RuntimeError(f"Failed to load history: {str(e)}")
+        finally:
+            db.close()
     
-    def load_history(self) -> None:
+    def save_turn(self, session_id: str, user_message: str, assistant_message: str) -> None:
         """
-        Load conversation history (no-op for MVP)
+        Save conversation turn (user message and assistant response)
+        
+        Args:
+            session_id: Session UUID string
+            user_message: User's message content
+            assistant_message: Assistant's response content
         """
-        pass
+        db = next(get_db())
+        try:
+            # Find session by UUID
+            session = db.query(ChatSession).filter(ChatSession.uuid == session_id).first()
+            
+            if not session:
+                logger.error(f"Session {session_id} not found, cannot save turn")
+                raise ValueError(f"Session {session_id} not found")
+            
+            # Create user message
+            user_msg = ChatMessage(
+                session_id=session.id,
+                role="user",
+                content=user_message
+            )
+            db.add(user_msg)
+            
+            # Create assistant message
+            assistant_msg = ChatMessage(
+                session_id=session.id,
+                role="assistant",
+                content=assistant_message
+            )
+            db.add(assistant_msg)
+            
+            # Update session timestamp (SQLAlchemy will handle this via onupdate, but we trigger it)
+            from datetime import datetime, timezone
+            session.updated_at = datetime.now(timezone.utc)
+            
+            db.commit()
+            
+            logger.info(f"Saved turn for session {session_id} (user + assistant messages)")
+            
+        except ValueError:
+            # Re-raise ValueError as-is (e.g., session not found)
+            db.rollback()
+            raise
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error saving turn for session {session_id}: {str(e)}")
+            raise RuntimeError(f"Failed to save turn: {str(e)}")
+        finally:
+            db.close()
+    
+    def _get_or_create_session(self, conversation_id: Optional[str] = None) -> str:
+        """
+        Get existing session by UUID or create new session
+        
+        Args:
+            conversation_id: Optional UUID string for existing session
+            
+        Returns:
+            Session UUID string
+        """
+        db = next(get_db())
+        try:
+            if conversation_id:
+                # Try to find existing session
+                session = db.query(ChatSession).filter(ChatSession.uuid == conversation_id).first()
+                if session:
+                    logger.info(f"Found existing session: {conversation_id}")
+                    return conversation_id
+            
+            # Create new session
+            new_uuid = str(uuid_lib.uuid4())
+            new_session = ChatSession(uuid=new_uuid)
+            db.add(new_session)
+            db.commit()
+            db.refresh(new_session)
+            
+            logger.info(f"Created new chat session: {new_uuid}")
+            return new_uuid
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Error getting/creating session: {str(e)}")
+            raise RuntimeError(f"Failed to get/create session: {str(e)}")
+        finally:
+            db.close()

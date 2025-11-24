@@ -73,6 +73,13 @@ This directory contains the epic definitions extracted from the PRD and architec
 - Effort: Medium (5-8 story points)
 - **Status**: Completed as of 2025-11-24
 
+12. **[Epic 12: Multi-turn Chat History Support](./epic-12-multi-turn-chat-history.md)** 🚧 **IN PROGRESS**
+
+- Persistent chat history to enable multi-turn conversations with follow-up questions
+- Priority: High
+- Effort: Medium (5-8 story points)
+- **Status**: In Progress
+
 ## Epic Dependencies
 
 ```mermaid
@@ -92,6 +99,8 @@ graph TD
     C --> K[Epic 11: Section-ID Query Improvements]
     K --> E
     I --> K
+    I --> L[Epic 12: Multi-turn Chat History]
+    L --> E
     D --> G[Epic 4: Authentication]
 ```
 

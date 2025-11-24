@@ -8,6 +8,7 @@ import {
   Bot,
   FileText,
   ExternalLink,
+  Plus,
 } from "lucide-react";
 import { apiService, ChatResponse, Citation } from "../services/api";
 
@@ -16,17 +17,31 @@ interface Message {
   content: string;
 }
 
-interface ChatInterfaceProps {
-  conversationId: string;
-}
+interface ChatInterfaceProps {}
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = () => {
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [citations, setCitations] = useState<Citation[]>([]);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const SESSION_STORAGE_KEY = "chat_session_id";
+
+  // Load sessionId from localStorage on mount
+  useEffect(() => {
+    try {
+      const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+      if (storedSessionId) {
+        setSessionId(storedSessionId);
+      }
+    } catch (err) {
+      // localStorage unavailable (private browsing, disabled, etc.)
+      console.warn("Failed to load session from localStorage:", err);
+    }
+  }, []);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -41,8 +56,17 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId }) => {
   // Chat mutation
   const chatMutation = useMutation({
     mutationFn: (message: string) =>
-      apiService.sendChatMessage(conversationId, message),
+      apiService.sendChatMessage(sessionId, message),
     onSuccess: (data: ChatResponse) => {
+      // Update sessionId from response and save to localStorage
+      if (data.session_id) {
+        setSessionId(data.session_id);
+        try {
+          localStorage.setItem(SESSION_STORAGE_KEY, data.session_id);
+        } catch (err) {
+          console.warn("Failed to save session to localStorage:", err);
+        }
+      }
       // Add user message to history
       setMessages((prev) => [...prev, { role: "user", content: input.trim() }]);
       // Add assistant response
@@ -68,6 +92,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId }) => {
       setMessages((prev) => [...prev, { role: "user", content: input.trim() }]);
     },
   });
+
+  // Handle "New Conversation" button click
+  const handleNewConversation = () => {
+    setSessionId(null);
+    setMessages([]);
+    setCitations([]);
+    setError(null);
+    try {
+      localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (err) {
+      console.warn("Failed to remove session from localStorage:", err);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,6 +138,19 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId }) => {
     <div className="flex flex-col md:flex-row w-full gap-0">
       {/* Messages Area */}
       <div className="flex-1 flex flex-col min-w-0 bg-white">
+        {/* New Conversation Button */}
+        {messages.length > 0 && (
+          <div className="px-4 md:px-6 pt-4 pb-2">
+            <button
+              onClick={handleNewConversation}
+              disabled={isLoading}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+            >
+              <Plus className="h-4 w-4" />
+              New Conversation
+            </button>
+          </div>
+        )}
         <div className="space-y-6 p-4 md:p-6">
           {messages.length === 0 ? (
             // Enhanced Empty state

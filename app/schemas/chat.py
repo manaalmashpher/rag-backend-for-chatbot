@@ -18,14 +18,14 @@ class Citation(BaseModel):
 
 class ChatRequest(BaseModel):
     """Chat request schema"""
-    conversation_id: str = Field(..., description="UUID string for conversation tracking")
+    conversation_id: Optional[str] = Field(None, description="Optional UUID string for conversation tracking")
     message: str = Field(..., min_length=1, max_length=1000, description="User message")
     
     @validator('conversation_id')
     def validate_conversation_id(cls, v):
-        """Validate conversation_id is a valid UUID format"""
-        if not v:
-            raise ValueError("conversation_id cannot be empty")
+        """Validate conversation_id is a valid UUID format if provided"""
+        if v is None or v == "":
+            return None  # Allow None/empty for new sessions
         
         try:
             # Validate UUID format
@@ -55,7 +55,7 @@ class ChatResponse(BaseModel):
     """Chat response schema"""
     answer: str = Field(..., description="Synthesized answer from DeepSeek")
     citations: List[Citation] = Field(default_factory=list, description="Array of citation objects")
-    conversation_id: str = Field(..., description="Echoed conversation ID")
+    session_id: str = Field(..., description="Session ID (created or existing)")
     latency_ms: int = Field(..., ge=0, description="Response latency in milliseconds")
 
 class ChatError(BaseModel):
