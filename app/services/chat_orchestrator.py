@@ -4,6 +4,7 @@ Chat orchestrator service that handles retrieval, reranking, context building, a
 
 from typing import List, Dict, Any, Optional
 import logging
+import re
 from app.services.hybrid_search import HybridSearchService
 from app.services.reranker import RerankerService
 from app.deps.deepseek_client import deepseek_chat
@@ -190,7 +191,17 @@ class ChatOrchestrator:
             
             if not context_chunks:
                 logger.warning("No context chunks provided for synthesis")
-                return "I couldn't find relevant information in the provided documents."
+                
+                # Extract section_id from query for better error messages
+                section_id_pattern = re.search(r'\d+(?:\.\d+)+', query)
+                section_id = section_id_pattern.group(0) if section_id_pattern else None
+                
+                if section_id is not None:
+                    # Provide informative message for section-based queries
+                    return f"I couldn't find any chunks mapped to section {section_id} in the uploaded documents. It may not exist in this version of the standard or hasn't been ingested yet."
+                else:
+                    # Generic message for non-section queries
+                    return "I couldn't find relevant information in the provided documents."
             
             # Build context from chunks
             context = self._build_context(context_chunks)

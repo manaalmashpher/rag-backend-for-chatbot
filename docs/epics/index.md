@@ -66,6 +66,13 @@ This directory contains the epic definitions extracted from the PRD and architec
 - Priority: Medium
 - Effort: Medium (4-7 story points)
 
+11. **[Epic 11: Section-ID Query Reliability Improvements](./epic-11-section-id-query-improvements.md)** ✅ **COMPLETED**
+
+- Section-ID-first retrieval, expanded synonyms, and graceful fallback mechanisms
+- Priority: Medium
+- Effort: Medium (5-8 story points)
+- **Status**: Completed as of 2025-11-24
+
 ## Epic Dependencies
 
 ```mermaid
@@ -82,6 +89,9 @@ graph TD
     I --> E
     C --> J[Epic 10: Reranking]
     J --> E
+    C --> K[Epic 11: Section-ID Query Improvements]
+    K --> E
+    I --> K
     D --> G[Epic 4: Authentication]
 ```
 

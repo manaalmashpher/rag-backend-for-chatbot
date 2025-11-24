@@ -4,7 +4,7 @@ Search API endpoints
 
 from fastapi import APIRouter, HTTPException, Query, Depends, Request
 from fastapi.responses import JSONResponse
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import time
 import logging
 import hashlib
@@ -17,7 +17,8 @@ from app.schemas.search import SearchRequest, SearchResponse, SearchError, Searc
 from app.core.database import get_db
 from app.core.config import settings
 from sqlalchemy.orm import Session
-from app.models.database import SearchLog
+from app.models.database import SearchLog, Chunk, Document
+import re
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -64,6 +65,34 @@ async def search_documents(
         
         if cached_result:
             return cached_result
+        
+        # EXPLICIT "GO TO SECTION" FEATURE
+        # Check if query is a direct section reference (e.g., "section 5.22.3", "show section 5.22.3")
+        section_direct_results = _handle_section_direct_lookup(search_request.q, search_request.limit, db)
+        if section_direct_results is not None:
+            # Direct section lookup succeeded, return results immediately
+            latency_ms = int((time.time() - start_time) * 1000)
+            
+            response = SearchResponse(
+                results=section_direct_results,
+                total_results=len(section_direct_results),
+                query=search_request.q,
+                limit=search_request.limit,
+                search_type="section-direct",
+                metadata=SearchMetadata(
+                    semantic_weight=0.0,
+                    lexical_weight=0.0,
+                    individual_results={"section-direct": len(section_direct_results)},
+                    latency_ms=latency_ms
+                ),
+                latency_ms=latency_ms
+            )
+            
+            # Cache the result
+            _cache_result(cache_key, response)
+            
+            logger.info(f"Section direct lookup completed: {len(section_direct_results)} results in {latency_ms}ms for query: {search_request.q[:50]}...")
+            return response
         
         # Perform hybrid search with top_k=50 for reranking
         import asyncio
@@ -320,6 +349,117 @@ def _cache_result(cache_key: str, response: SearchResponse):
         ]
         for key in expired_keys:
             del _search_cache[key]
+
+def _handle_section_direct_lookup(query: str, limit: int, db: Session) -> Optional[List[Dict[str, Any]]]:
+    """
+    Handle explicit "go to section" queries with direct DB lookup
+    
+    Detects patterns like:
+    - "section 5.22.3"
+    - "show section 5.22.3"
+    - "go to section 5.22.3"
+    - "5.22.3" (if query is mostly just the section ID)
+    
+    This is for explicit navigation queries, not semantic queries about sections.
+    For queries like "what's expected in section 5.22.3", the HybridSearchService
+    will handle the section-id-first path.
+    
+    Args:
+        query: Search query string
+        limit: Maximum number of results
+        db: Database session
+        
+    Returns:
+        List of SearchResult dictionaries if section query detected and found, None otherwise
+    """
+    try:
+        # Pattern to match explicit section references
+        # Matches: "section 5.22.3", "show section 5.22.3", "go to section 5.22.3"
+        explicit_patterns = [
+            r'^(?:show\s+|go\s+to\s+)?section\s+(\d+(?:\.\d+)+)\s*$',  # "section 5.22.3" or "show section 5.22.3"
+            r'^(\d+(?:\.\d+)+)\s*$',  # Just "5.22.3"
+        ]
+        
+        section_id = None
+        for pattern in explicit_patterns:
+            match = re.match(pattern, query.strip(), re.IGNORECASE)
+            if match:
+                section_id = match.group(1)
+                break
+        
+        # If no explicit pattern matched, check if query is very short and contains a section ID
+        if not section_id:
+            # Pattern to extract section ID from query
+            section_pattern = r'(\d+(?:\.\d+)+)'
+            match = re.search(section_pattern, query)
+            if match:
+                section_id = match.group(1)
+                # Only treat as direct lookup if query is very short (mostly just section ID + minimal words)
+                query_words = re.findall(r'\b\w+\b', query.lower())
+                # Remove common navigation words
+                navigation_words = {'section', 'show', 'go', 'to', 'the'}
+                meaningful_words = [w for w in query_words if w not in navigation_words and not w.isdigit()]
+                
+                # If there are more than 2 meaningful words beyond the section ID, use normal search
+                if len(meaningful_words) > 2:
+                    return None
+        
+        if not section_id:
+            return None
+        
+        section_id_alias = section_id.replace('.', '_')
+        
+        # Direct DB lookup: first try exact section_id
+        chunks = db.query(Chunk).join(Document).filter(
+            (Chunk.section_id == section_id) | (Chunk.section_id_alias == section_id_alias)
+        ).order_by(Chunk.page_from.asc(), Chunk.id.asc()).limit(limit).all()
+        
+        # If no exact match, try parent section fallback
+        if not chunks and '.' in section_id:
+            segments = section_id.split('.')
+            if len(segments) >= 2:
+                parent_section_id = '.'.join(segments[:-1])
+                parent_section_id_alias = parent_section_id.replace('.', '_')
+                
+                logger.info(f"Section {section_id} not found, trying parent section {parent_section_id}")
+                
+                chunks = db.query(Chunk).join(Document).filter(
+                    (Chunk.section_id == parent_section_id) | (Chunk.section_id_alias == parent_section_id_alias)
+                ).order_by(Chunk.page_from.asc(), Chunk.id.asc()).limit(limit).all()
+        
+        if not chunks:
+            return None
+        
+        # Build SearchResult list
+        results = []
+        for idx, chunk in enumerate(chunks):
+            # Generate snippet from chunk text
+            snippet = _generate_snippet(chunk.text, query)
+            
+            # Use high score for direct section matches (1.0 for first, slightly decreasing)
+            score = 1.0 - (idx * 0.01)
+            score = max(0.9, score)
+            
+            result = {
+                'chunk_id': f"ch_{chunk.id:05d}",
+                'doc_id': f"doc_{chunk.doc_id:02X}",
+                'method': int(chunk.method),
+                'page_from': int(chunk.page_from) if chunk.page_from else None,
+                'page_to': int(chunk.page_to) if chunk.page_to else None,
+                'hash': str(chunk.hash),
+                'source': chunk.document.title if chunk.document else '',
+                'snippet': snippet if snippet else None,
+                'score': score,
+                'search_type': 'section-direct'
+            }
+            results.append(result)
+        
+        logger.info(f"Section direct lookup found {len(results)} chunks for section {section_id}")
+        return results
+        
+    except Exception as e:
+        logger.error(f"Section direct lookup failed: {str(e)}")
+        return None
 
 def _log_search_query_async(db: Session, query: str, metadata: dict, latency_ms: int):
     """

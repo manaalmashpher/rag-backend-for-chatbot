@@ -4,9 +4,12 @@ Hybrid search service combining semantic and lexical search
 
 from typing import List, Dict, Any, Optional
 import logging
+import re
 from app.services.vector_search import VectorSearchService
 from app.services.lexical_search import LexicalSearchService
 from app.core.config import settings
+from app.core.database import get_db
+from app.models.database import Chunk, Document
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +38,28 @@ class HybridSearchService:
             List of fused search results ranked by combined score
         """
         try:
-            # Perform both searches sequentially to prevent memory spikes
-            import time
-            import re
+            # Extract section_id pattern from query for section-id-first retrieval
+            section_id_pattern = re.search(r'\d+(?:\.\d+)+', query)
+            query_section_id = section_id_pattern.group(0) if section_id_pattern else None
+            query_section_id_alias = query_section_id.replace('.', '_') if query_section_id else None
             
+            # SECTION-ID-FIRST RETRIEVAL PATH
+            # If a section ID is detected, try direct DB lookup first
+            if query_section_id is not None:
+                direct_results = self._direct_section_id_lookup(query_section_id, query_section_id_alias, limit)
+                if direct_results:
+                    logger.info(f"Section-ID direct hit: found {len(direct_results)} chunks for section {query_section_id}")
+                    return direct_results
+                
+                # PARENT SECTION FALLBACK
+                # Try parent section if exact match not found
+                parent_results = self._parent_section_fallback(query_section_id, limit)
+                if parent_results:
+                    logger.info(f"Section-ID near miss: found {len(parent_results)} chunks for parent section of {query_section_id}")
+                    return parent_results
+            
+            # FALLBACK TO NORMAL HYBRID SEARCH
+            # Perform both searches sequentially to prevent memory spikes
             semantic_results = []
             lexical_results = []
             
@@ -60,11 +81,6 @@ class HybridSearchService:
             if not semantic_results and not lexical_results:
                 logger.error("Both vector and lexical search failed")
                 return []
-            
-            # Extract section_id pattern from query for boosting
-            section_id_pattern = re.search(r'\d+(?:\.\d+)+', query)
-            query_section_id = section_id_pattern.group(0) if section_id_pattern else None
-            query_section_id_alias = query_section_id.replace('.', '_') if query_section_id else None
             
             # Check for supporting documents keywords
             supporting_docs_keywords = ['supporting documents', 'supporting evidence', 'evidence', 'indicators', 'objectives']
@@ -105,6 +121,101 @@ class HybridSearchService:
             return self.lexical_search.search(query, limit)
         except Exception as e:
             logger.warning(f"Lexical search error: {str(e)}")
+            return []
+    
+    def _direct_section_id_lookup(self, section_id: str, section_id_alias: str, limit: int) -> List[Dict[str, Any]]:
+        """
+        Direct database lookup for chunks matching a specific section ID
+        
+        Args:
+            section_id: Section ID to search for (e.g., "5.22.3")
+            section_id_alias: Section ID alias (e.g., "5_22_3")
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of result dictionaries matching the section ID, or empty list if none found
+        """
+        try:
+            db = next(get_db())
+            try:
+                # Query chunks table for matching section_id or section_id_alias
+                # Order by page_from ASC, id ASC for consistent ordering
+                chunks = db.query(Chunk).join(Document).filter(
+                    (Chunk.section_id == section_id) | (Chunk.section_id_alias == section_id_alias)
+                ).order_by(Chunk.page_from.asc(), Chunk.id.asc()).limit(min(limit, self.topk_vec)).all()
+                
+                if not chunks:
+                    return []
+                
+                # Build results list matching hybrid search result format
+                results = []
+                for idx, chunk in enumerate(chunks):
+                    # Use decreasing score based on rank (1.0 for first, decreasing)
+                    # This ensures section-id direct hits are ranked highly
+                    score = 1.0 - (idx * 0.01)  # Slight decrease per result
+                    score = max(0.9, score)  # Keep scores high (0.9-1.0)
+                    
+                    result = {
+                        'chunk_id': f"ch_{chunk.id:05d}",
+                        'doc_id': f"doc_{chunk.doc_id:02X}",
+                        'method': int(chunk.method),
+                        'page_from': int(chunk.page_from) if chunk.page_from else None,
+                        'page_to': int(chunk.page_to) if chunk.page_to else None,
+                        'hash': str(chunk.hash),
+                        'source': chunk.document.title if chunk.document else '',
+                        'text': str(chunk.text),
+                        'score': score,
+                        'fused_score': score,
+                        'semantic_score': 0.0,
+                        'lexical_score': 0.0,
+                        'sources': ['section-direct'],
+                        'payload': {
+                            'section_id': chunk.section_id,
+                            'section_id_alias': chunk.section_id_alias,
+                            'title': chunk.title,
+                            'has_supporting_docs': chunk.has_supporting_docs
+                        }
+                    }
+                    results.append(result)
+                
+                return results
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Direct section ID lookup failed: {str(e)}")
+            return []
+    
+    def _parent_section_fallback(self, section_id: str, limit: int) -> List[Dict[str, Any]]:
+        """
+        Fallback to parent section if exact section ID not found
+        
+        Args:
+            section_id: Section ID that wasn't found (e.g., "5.22.3")
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of result dictionaries for parent section, or empty list if none found
+        """
+        try:
+            # Compute parent section ID by stripping last segment
+            # Only do this if there's at least one dot
+            if '.' not in section_id:
+                return []
+            
+            # Split by dots and remove last segment
+            segments = section_id.split('.')
+            if len(segments) < 2:
+                return []
+            
+            parent_section_id = '.'.join(segments[:-1])
+            parent_section_id_alias = parent_section_id.replace('.', '_')
+            
+            logger.info(f"Trying parent section fallback: {parent_section_id} (from {section_id})")
+            
+            # Use the same direct lookup logic for parent section
+            return self._direct_section_id_lookup(parent_section_id, parent_section_id_alias, limit)
+        except Exception as e:
+            logger.error(f"Parent section fallback failed: {str(e)}")
             return []
     
     def _fuse_results(
