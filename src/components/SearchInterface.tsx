@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Search, FileText, AlertCircle } from "lucide-react";
 import { apiService, SearchResponse } from "../services/api";
@@ -11,17 +11,7 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({
   initialQuery = "",
 }) => {
   const [query, setQuery] = useState(initialQuery);
-  const [searchQuery, setSearchQuery] = useState(initialQuery);
-  const [debouncedQuery, setDebouncedQuery] = useState(initialQuery);
-
-  // Debounce search query to reduce API calls
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(query);
-    }, 500); // 500ms debounce
-
-    return () => clearTimeout(timer);
-  }, [query]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const {
     data: searchResults,
@@ -29,9 +19,9 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({
     error,
     refetch,
   } = useQuery<SearchResponse>({
-    queryKey: ["search", debouncedQuery],
-    queryFn: () => apiService.searchDocuments(debouncedQuery),
-    enabled: !!debouncedQuery.trim(),
+    queryKey: ["search", searchQuery],
+    queryFn: () => apiService.searchDocuments(searchQuery),
+    enabled: !!searchQuery.trim(),
     staleTime: 300000, // Consider data fresh for 5 minutes (server-side caching)
     gcTime: 600000, // Keep in cache for 10 minutes
     retry: 2, // Retry twice on failure
@@ -40,6 +30,10 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    performSearch();
+  };
+
+  const performSearch = () => {
     if (query.trim()) {
       const trimmedQuery = query.trim();
       setSearchQuery(trimmedQuery);
@@ -115,7 +109,8 @@ const SearchInterface: React.FC<SearchInterfaceProps> = ({
           </div>
           <div className="flex items-end space-x-2">
             <button
-              type="submit"
+              type="button"
+              onClick={performSearch}
               disabled={!query.trim() || isLoading}
               className="btn btn-primary"
             >
